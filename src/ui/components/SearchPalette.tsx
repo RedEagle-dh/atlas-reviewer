@@ -1,6 +1,7 @@
 /** Ctrl/Cmd-K: fuzzy search over the visible files; Enter opens the chosen one. */
+import { useCommandState } from "cmdk";
 import { ArrowDownIcon, ArrowUpIcon, CornerDownLeftIcon } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, type RefObject, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
 	Command,
 	CommandDialog,
@@ -67,6 +68,32 @@ function highlight(path: string, indices: readonly number[]): ReactNode[] {
 	return parts;
 }
 
+/**
+ * Names the selected row to a screen reader (`aria-activedescendant` on the field and the list).
+ * cmdk sets that attribute after the caller's props, and only when it moves the selection itself:
+ * the first result of a new query, which we select, would go unnamed or the row before would keep
+ * the name. This renders again whenever cmdk's selection or its own id for it changes, so its
+ * effect runs after cmdk's write and before the paint.
+ */
+function SelectedRowName({
+	input,
+	list,
+}: {
+	input: RefObject<HTMLInputElement | null>;
+	list: RefObject<HTMLDivElement | null>;
+}) {
+	useCommandState((state) => state.value);
+	useCommandState((state) => state.selectedItemId);
+	useLayoutEffect(() => {
+		const id = list.current?.querySelector('[cmdk-item][aria-selected="true"]')?.id;
+		for (const element of [input.current, list.current]) {
+			if (id) element?.setAttribute("aria-activedescendant", id);
+			else element?.removeAttribute("aria-activedescendant");
+		}
+	});
+	return null;
+}
+
 /** The field, the results and the key hints. Lives only while the dialog is open: a new search starts empty. */
 function Search({ onClose }: { onClose: () => void }) {
 	const { reading, meta, viewed, go } = useAtlas();
@@ -76,9 +103,13 @@ function Search({ onClose }: { onClose: () => void }) {
 	// selected before the key (now somewhere down the list), scrolls the list there, and then
 	// moves to the first row without scrolling back: the best matches were out of sight.
 	const [selected, setSelected] = useState("");
+	const input = useRef<HTMLInputElement>(null);
+	const list = useRef<HTMLDivElement>(null);
 	const search = (next: string) => {
 		setQuery(next);
 		setSelected(fuzzyFilter(next, reading, (f) => f.path, 1)[0]?.item.path ?? "");
+		// cmdk scrolls only to a row it selected itself; the first result is at the top.
+		if (list.current) list.current.scrollTop = 0;
 	};
 	const chapterTitle = useMemo(() => new Map(meta.chapters.map((c) => [c.id, c.title])), [meta]);
 	return (
@@ -90,8 +121,13 @@ function Search({ onClose }: { onClose: () => void }) {
 			value={selected}
 			onValueChange={setSelected}
 		>
-			<CommandInput placeholder={S.searchPlaceholder} value={query} onValueChange={search} />
-			<CommandList className="max-h-[min(24rem,50svh)]">
+			<CommandInput
+				ref={input}
+				placeholder={S.searchPlaceholder}
+				value={query}
+				onValueChange={search}
+			/>
+			<CommandList ref={list} className="max-h-[min(24rem,50svh)]">
 				<CommandEmpty>{S.searchEmpty}</CommandEmpty>
 				{results.length > 0 ? (
 					<CommandGroup>
@@ -122,6 +158,7 @@ function Search({ onClose }: { onClose: () => void }) {
 					</CommandGroup>
 				) : null}
 			</CommandList>
+			<SelectedRowName input={input} list={list} />
 			{/* For the eye; a screen reader gets the same as the dialog's description. */}
 			<div
 				className="-mx-1 mt-1 -mb-1 flex items-center gap-4 border-t px-3 py-2 text-xs text-muted-foreground"
