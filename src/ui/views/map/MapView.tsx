@@ -4,8 +4,6 @@
  * this component turns them into React Flow nodes and edges and handles hover, clicks, the
  * viewport and the controls.
  */
-import "@xyflow/react/dist/base.css";
-import "../../styles/map.css";
 import {
 	MiniMap,
 	type NodeMouseHandler,

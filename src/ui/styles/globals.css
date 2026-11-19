@@ -17,6 +17,14 @@
 @import "./base.css" layer(base);
 @import "./shell.css" layer(base);
 
+/*
+ * What utilities do not fit: React Flow's own sheet (base layer, so the map's rules and every
+ * utility win over it), the rows of the code view, the map's nodes and lines.
+ */
+@import "@xyflow/react/dist/base.css" layer(base);
+@import "./code.css" layer(components);
+@import "./map.css" layer(components);
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

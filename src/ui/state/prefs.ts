@@ -1,5 +1,5 @@
 /** Per-viewer choices kept in localStorage: theme, filters, toggles. */
-import { useCallback, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { readStored, writeStored } from "../lib/storage";
 
 /** A string choice out of `allowed`, remembered under `key`. */
@@ -62,6 +62,16 @@ export function useTheme(): [Theme, (theme: Theme) => void, ResolvedTheme] {
 		document.documentElement.classList.toggle("dark", resolved === "dark");
 	}, [resolved]);
 	return [theme, setTheme, resolved];
+}
+
+const ResolvedThemeContext = createContext<ResolvedTheme>("light");
+
+/** Provided once by `app.tsx` with what `useTheme()` resolved to. */
+export const ResolvedThemeProvider = ResolvedThemeContext.Provider;
+
+/** `light` or `dark`, for what takes the theme as a value (React Flow's `colorMode`, the toaster). */
+export function useResolvedTheme(): ResolvedTheme {
+	return useContext(ResolvedThemeContext);
 }
 
 /** The visible categories of a review; defaults from the review, remembered per review. */

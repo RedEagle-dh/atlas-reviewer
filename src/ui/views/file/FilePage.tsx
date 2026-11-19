@@ -4,7 +4,6 @@
  * outside the review is shown read-only and marked as such.
  */
 import "../../styles/file.css";
-import "../../styles/code.css";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import type { ChangedFile, FileView } from "../../../core/types";
 import { ApiError, getFile } from "../../api";

@@ -14,7 +14,7 @@ import { TopBar } from "./components/TopBar";
 import { shortSha } from "./lib/files";
 import { mapRoute, type Route, readFileParams, withRange } from "./router";
 import { AtlasContext, useAtlasValue, useViewedState } from "./state/atlas";
-import { type Theme, useCategories, useFlag, useTheme } from "./state/prefs";
+import { ResolvedThemeProvider, type Theme, useCategories, useFlag, useTheme } from "./state/prefs";
 import { useResource } from "./state/resource";
 import { hrefOf, navigate, useRoute, useScrollMemory } from "./state/route";
 import { S, withWords } from "./strings";
@@ -139,10 +139,12 @@ function Shell({
 export function App() {
 	const [theme, setTheme, resolved] = useTheme();
 	return (
-		<TooltipProvider delay={300}>
-			<Content theme={theme} setTheme={setTheme} />
-			<Toaster theme={resolved} position="bottom-center" />
-		</TooltipProvider>
+		<ResolvedThemeProvider value={resolved}>
+			<TooltipProvider delay={300}>
+				<Content theme={theme} setTheme={setTheme} />
+				<Toaster theme={resolved} position="bottom-center" />
+			</TooltipProvider>
+		</ResolvedThemeProvider>
 	);
 }
 
