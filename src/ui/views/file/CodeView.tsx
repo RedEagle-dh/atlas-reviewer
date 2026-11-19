@@ -54,7 +54,8 @@ function tokenClass(colour: number, style: number | undefined): string {
 }
 
 function Tokens({ line }: { line: TokenLine }) {
-	if (line.length === 0) return "​";
+	// A zero-width space, written as an escape so it can be seen.
+	if (line.length === 0) return "\u200b";
 	return line.map(([text, colour, style], i) =>
 		colour === 0 && !style ? (
 			text
@@ -234,7 +235,9 @@ export function CodeView({
 				<div
 					key={chunk.start}
 					className="code-chunk"
-					style={{ containIntrinsicSize: `auto ${chunk.height}px` }}
+					// Only the height is reserved. One value would stand for the width too, and a chunk
+					// off screen would make the code scroll sideways as far as the chunk is tall.
+					style={{ containIntrinsicSize: `auto none auto ${chunk.height}px` }}
 				>
 					{chunk.rows.map((row, i) => (
 						<CodeRow

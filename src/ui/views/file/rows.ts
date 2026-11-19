@@ -1,8 +1,9 @@
 /**
  * The rows of the code view: head lines, the base lines a change block replaced (shown inline
  * above the block), markers for removals that are hidden, and folds for unchanged stretches in
- * the mode "Nur Änderungen". Pure, so the subtle parts (where removed lines go, which stretches
- * fold) are tested apart from the rendering.
+ * the mode "Nur Änderungen"; and which change block `n` / `p` go to. Pure, so the subtle parts
+ * (where removed lines go, which stretches fold, the step at the end of the page) are tested
+ * apart from the rendering.
  */
 import type { ChangeBlock } from "../../../core/types";
 
@@ -130,4 +131,34 @@ export function buildRows(
 	}
 	rows.push(...(before.get(lineCount + 1) ?? []));
 	return rows;
+}
+
+/**
+ * Which change block `n` (`direction` 1) or `p` (-1) goes to, from where the blocks' anchor rows
+ * are on screen: the first block below (the last one above) the landing place, the line a block
+ * is scrolled to. `tops` are the anchors' upper edges in the order of the blocks, `current` is
+ * the block the last press went to. Returns -1 when there is no such block.
+ */
+export function nextChange(
+	tops: readonly number[],
+	landing: number,
+	direction: 1 | -1,
+	current: number | null,
+	atEnd: boolean,
+): number {
+	// A block that sits at the landing place already is the next one, unless it is the current
+	// one: with "Zusammenhang" closed the first row of the code is exactly there.
+	const waiting = (top: number, i: number) => i !== current && Math.abs(top - landing) <= 2;
+	const index =
+		direction === 1
+			? tops.findIndex((top, i) => top > landing + 2 || waiting(top, i))
+			: tops.findLastIndex((top, i) => top < landing - 2 || waiting(top, i));
+	// At its end the page cannot scroll further: the last blocks stay below the landing place, and
+	// where they are no longer says which one is next. There the step is counted from `current`.
+	if (atEnd && current !== null) {
+		if (direction === 1 && index !== -1 && index <= current)
+			return current + 1 < tops.length ? current + 1 : -1;
+		if (direction === -1 && current - 1 > index) return current - 1;
+	}
+	return index;
 }

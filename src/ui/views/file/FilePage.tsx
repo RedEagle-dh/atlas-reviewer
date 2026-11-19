@@ -40,7 +40,7 @@ import type { ChangedFile, FileView } from "../../../core/types";
 import { ApiError, getFile } from "../../api";
 import { Delta, StatusBadge } from "../../components/marks";
 import { ErrorView, Loading, Notice } from "../../components/states";
-import { baseName, viewedMark } from "../../lib/files";
+import { baseName, ltr, viewedMark } from "../../lib/files";
 import { readStored } from "../../lib/storage";
 import { fileRoute, type Grouping, mapRoute, type Route, readFileParams } from "../../router";
 import { isRangeMoved, useAtlas } from "../../state/atlas";
@@ -51,8 +51,9 @@ import { takeRestore } from "../../state/route";
 import { categoryLabel, fmt, S } from "../../strings";
 import { buildGroupTree, groupOfFile } from "../map/grouping";
 import { CodeView } from "./CodeView";
-import { Neighbourhood } from "./Neighbourhood";
+import { BELOW_HEADER, Neighbourhood } from "./Neighbourhood";
 import { importLinks, neighboursOf } from "./neighbours";
+import { nextChange } from "./rows";
 
 /** The last few file views, so going back and forth between files is instant. */
 class RecentFiles<V> extends Map<string, V> {
@@ -80,19 +81,21 @@ const CONTEXT_ABOVE = 3 * 20;
 /**
  * Scrolls the next (or previous) change block to a fixed place three lines below the sticky
  * header, so the lines before it stay in view and the following press starts from there. Returns
- * the block's index.
+ * the block's index. `current` is the block the last press went to.
  */
-function jumpToChange(direction: 1 | -1): number | null {
+function jumpToChange(direction: 1 | -1, current: number | null): number | null {
 	const main = document.querySelector(".main");
-	const anchors = [...document.querySelectorAll<HTMLElement>(".code-view [data-anchor]")];
+	if (!main) return null;
 	const landing = stickyBottom() + CONTEXT_ABOVE;
-	const target =
-		direction === 1
-			? anchors.find((a) => a.getBoundingClientRect().top > landing + 2)
-			: [...anchors].reverse().find((a) => a.getBoundingClientRect().top < landing - 2);
-	if (!target || !main) return null;
-	main.scrollBy({ top: target.getBoundingClientRect().top - landing });
-	return anchors.indexOf(target);
+	const tops = [...document.querySelectorAll(".code-view [data-anchor]")].map(
+		(anchor) => anchor.getBoundingClientRect().top,
+	);
+	const atEnd = main.scrollHeight - main.scrollTop - main.clientHeight < 2;
+	const index = nextChange(tops, landing, direction, current, atEnd);
+	const top = tops[index];
+	if (top === undefined) return null;
+	main.scrollBy({ top: top - landing });
+	return index;
 }
 
 /**
@@ -322,7 +325,7 @@ function Loaded({
 		href(mapRoute({ group: dir, grouping: "dirs", focus: view.path }));
 
 	const toChange = (direction: 1 | -1) => {
-		const i = jumpToChange(direction);
+		const i = jumpToChange(direction, changeIndex);
 		if (i !== null) setChangeIndex(i);
 	};
 
@@ -340,9 +343,10 @@ function Loaded({
 
 	const changeCount = plain ? 0 : view.changes.length;
 	const statusLabel = view.status === "added" ? S.newFile : undefined;
-	const note = view.oldPath
-		? S.renamedFrom(view.oldPath)
-		: view.status === "unchanged"
+	const chapterLabel = chapter ? `${S.chapter} ${chapterIndex + 1}: ${chapter.title}` : undefined;
+	// Why the file is here although it is not part of the review.
+	const note =
+		view.status === "unchanged"
 			? S.unchangedHint
 			: excluded
 				? S.excludedHint(categoryLabel(meta.categories, view.category))
@@ -409,12 +413,25 @@ function Loaded({
 					<StatusBadge status={view.status} {...(statusLabel ? { label: statusLabel } : {})} />
 					{file ? <Delta added={file.added} deleted={file.deleted} /> : null}
 					{chapter ? (
+						// The title gives way (down to the chapter's number) before the code controls
+						// take a third row: it starts narrow and grows to its full width where there is room.
 						<a
-							className="max-w-full min-w-0 truncate rounded-sm py-1 text-xs text-muted-foreground underline decoration-muted-foreground/40 underline-offset-2 outline-none hover:text-foreground hover:decoration-current focus-visible:ring-3 focus-visible:ring-ring/50"
+							className="max-w-max min-w-0 flex-1 basis-24 truncate rounded-sm py-1 text-xs text-muted-foreground underline decoration-muted-foreground/40 underline-offset-2 outline-none hover:text-foreground hover:decoration-current focus-visible:ring-3 focus-visible:ring-ring/50"
 							href={href(mapRoute({ group: chapter.id, grouping: "chapters" }))}
+							title={chapterLabel}
 						>
-							{S.chapter} {chapterIndex + 1}: {chapter.title}
+							{chapterLabel}
 						</a>
+					) : null}
+					{view.oldPath ? (
+						<span
+							className="flex min-w-0 flex-1 basis-48 gap-1 text-xs text-muted-foreground"
+							title={view.oldPath}
+						>
+							<span className="shrink-0">{S.renamedFrom} </span>
+							{/* Cut from the left like every path: its end, the old name, says the most. */}
+							<span className="truncate text-left [direction:rtl]">{ltr(view.oldPath)}</span>
+						</span>
 					) : null}
 					{note ? (
 						<span
@@ -518,7 +535,10 @@ function Loaded({
 								variant="ghost"
 								size="sm"
 								// Open is this section's usual state, not a pressed button: no fill for it.
-								className="-ml-2.5 aria-expanded:bg-transparent aria-expanded:hover:bg-muted dark:aria-expanded:hover:bg-muted/50"
+								className={cn(
+									"-ml-2.5 aria-expanded:bg-transparent aria-expanded:hover:bg-muted dark:aria-expanded:hover:bg-muted/50",
+									BELOW_HEADER,
+								)}
 							/>
 						}
 					>

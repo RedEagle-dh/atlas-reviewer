@@ -158,7 +158,7 @@ export const S = {
 	copied: "Kopiert",
 	copyFailed: "Kopieren nicht möglich: der Browser gibt die Zwischenablage nicht frei.",
 	chapter: "Kapitel",
-	renamedFrom: (old: string) => `umbenannt von ${old}`,
+	renamedFrom: "umbenannt von",
 	newFile: "neue Datei",
 	deletedFile: "Gelöschte Datei: gezeigt wird der alte Stand.",
 	unchangedHint: "Gehört nicht zu den Änderungen; nur zum Nachlesen.",
@@ -174,7 +174,6 @@ export const S = {
 			: n < 1024 * 1024
 				? `${fmt(Math.round(n / 1024))} KB`
 				: `${(n / 1024 / 1024).toFixed(1).replace(".", ",")} MB`,
-	keyHint: (key: string) => `Taste ${key}`,
 
 	// Neighbourhood
 	neighbourhood: "Zusammenhang",
@@ -214,7 +213,6 @@ export const S = {
 	changeOf: (i: number, n: number) => `${fmt(i)} von ${fmt(n)}`,
 	changes: (n: number) => plural(n, "Änderung", "Änderungen"),
 	folded: (n: number) => `… ${plural(n, "unveränderte Zeile", "unveränderte Zeilen")}`,
-	foldedTitle: "Klick: aufklappen",
 	importLink: (target: string) => `Zu ${target}`,
 	removedLines: (n: number) => plural(n, "Zeile entfernt", "Zeilen entfernt"),
 } as const;

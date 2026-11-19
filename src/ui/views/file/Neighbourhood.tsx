@@ -29,8 +29,11 @@ const GAP_W = 72;
 /** The box of the file itself. */
 const CENTRE_H = 56;
 
-/** On what Tab reaches: scrolled into view from further down, it stops below the sticky header. */
-const BELOW_HEADER = "scroll-mt-32";
+/**
+ * On what Tab reaches below the sticky header: brought into view from further down, it stops below
+ * the header (8rem covers the header's three rows at a narrow width) instead of under it.
+ */
+export const BELOW_HEADER = "scroll-mt-32";
 
 /** What is imported and how, for the tooltip of a row or a package. */
 function ImportedNames({ kind, names }: { kind: ImportKind; names: string[] }) {
@@ -77,14 +80,15 @@ function NeighbourRow({ n, side }: { n: Neighbour; side: "imports" | "importers"
 					<span className="pointer-events-none flex" aria-hidden="true">
 						<StatusMark status={status} />
 					</span>
-					{/* Cut from the left: the name stays, the folders go. */}
+					{/* Cut from the left: the name stays, the folders go. The left-to-right marks keep a
+					    name's leading or trailing punctuation (".env", "$id.tsx") where it belongs. */}
 					<span className="truncate text-left [direction:rtl]">
-						{"‎"}
+						{"\u200e"}
 						{dir === "" ? null : <span className="text-muted-foreground">{dir}/</span>}
 						<span className={cn("font-medium", n.where === "review" && "text-foreground")}>
 							{baseName(n.path)}
 						</span>
-						{"‎"}
+						{"\u200e"}
 					</span>
 					<span className="whitespace-nowrap text-muted-foreground">{tag}</span>
 				</TooltipTrigger>
@@ -274,12 +278,14 @@ export function Neighbourhood({ view, neighbours }: { view: FileView; neighbours
 						<span className="text-muted-foreground">{S.packages}</span>
 						{neighbours.packages.map((p) => (
 							<Tooltip key={p.name}>
-								{/* In the tab order: the tooltip is the only place that says what is imported. */}
+								{/* In the tab order: the tooltip is the only place that shows what is imported.
+								    A screen reader gets the same as the badge's description. */}
 								<TooltipTrigger
 									render={
 										<Badge
 											variant="outline"
 											tabIndex={0}
+											aria-description={`${S.importKind[p.kind]}: ${S.names(p.names)}`}
 											className={cn(
 												"font-normal",
 												p.kind === "type" && "border-dashed",

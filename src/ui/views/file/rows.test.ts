@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ChangeBlock } from "../../../core/types";
-import { buildRows, type Row, type RowOptions } from "./rows";
+import { buildRows, nextChange, type Row, type RowOptions } from "./rows";
 
 const removed = (n: number) =>
 	Array.from({ length: n }, (_, i) => [[`old ${i}`, 0]] as [string, number][]);
@@ -99,5 +99,67 @@ describe("anchors (where `n` / `p` jump to: `data-anchor` in the code view)", ()
 			[1, 9],
 			[2, 12],
 		]);
+	});
+});
+
+describe("nextChange (the block `n` / `p` go to)", () => {
+	// The landing place is at 140; a block that was scrolled to sits exactly there.
+	const LANDING = 140;
+
+	test("by position: the first block below the landing place, the last one above it", () => {
+		const tops = [-300, 20, 400, 900];
+		expect(nextChange(tops, LANDING, 1, null, false)).toBe(2);
+		expect(nextChange(tops, LANDING, -1, null, false)).toBe(1);
+	});
+
+	test("the block that was just scrolled to is skipped in both directions", () => {
+		const tops = [-300, 140, 400];
+		expect(nextChange(tops, LANDING, 1, 1, false)).toBe(2);
+		expect(nextChange(tops, LANDING, -1, 1, false)).toBe(0);
+	});
+
+	test("a block that sits at the landing place without being the current one is next", () => {
+		// "Zusammenhang" closed: the first row of the code is where a block lands.
+		const tops = [140, 180, 700];
+		expect(nextChange(tops, LANDING, 1, null, false)).toBe(0);
+		expect(nextChange(tops, LANDING, 1, 0, false)).toBe(1);
+	});
+
+	test("after scrolling by hand the position counts, not the last block", () => {
+		// Block 3 was the last one; the reader scrolled back up to above block 1.
+		const tops = [-50, 300, 600, 1400];
+		expect(nextChange(tops, LANDING, 1, 3, false)).toBe(1);
+		expect(nextChange(tops, LANDING, -1, 3, false)).toBe(0);
+	});
+
+	test("at the end of the page `n` steps on through blocks that cannot reach the landing place", () => {
+		// Blocks 2 and 3 are in the last lines: both stay below the landing place.
+		const tops = [-900, -400, 500, 540];
+		expect(nextChange(tops, LANDING, 1, 1, true)).toBe(2);
+		expect(nextChange(tops, LANDING, 1, 2, true)).toBe(3);
+		expect(nextChange(tops, LANDING, 1, 3, true)).toBe(-1);
+	});
+
+	test("at the end of the page `p` steps back one block at a time", () => {
+		const tops = [-900, -400, 500, 540];
+		expect(nextChange(tops, LANDING, -1, 3, true)).toBe(2);
+		expect(nextChange(tops, LANDING, -1, 2, true)).toBe(1);
+	});
+
+	test("a page too short to scroll walks through every block and stops at both ends", () => {
+		const tops = [300, 340, 500];
+		expect(nextChange(tops, LANDING, 1, null, true)).toBe(0);
+		expect(nextChange(tops, LANDING, 1, 0, true)).toBe(1);
+		expect(nextChange(tops, LANDING, 1, 1, true)).toBe(2);
+		expect(nextChange(tops, LANDING, 1, 2, true)).toBe(-1);
+		expect(nextChange(tops, LANDING, -1, 2, true)).toBe(1);
+		expect(nextChange(tops, LANDING, -1, 1, true)).toBe(0);
+		expect(nextChange(tops, LANDING, -1, 0, true)).toBe(-1);
+	});
+
+	test("no block in that direction, or none at all", () => {
+		expect(nextChange([-300, 20], LANDING, 1, null, false)).toBe(-1);
+		expect(nextChange([400, 900], LANDING, -1, null, false)).toBe(-1);
+		expect(nextChange([], LANDING, 1, null, true)).toBe(-1);
 	});
 });

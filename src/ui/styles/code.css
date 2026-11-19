@@ -17,6 +17,14 @@
 	tab-size: 2;
 }
 
+/*
+ * A box that scrolls sideways is a Tab stop of its own (always in Firefox; in Chrome when nothing
+ * inside takes the focus), so the arrow keys can scroll it: it shows the ring a control shows.
+ */
+.code-view:focus-visible {
+	@apply border-ring ring-3 ring-ring/50 outline-none;
+}
+
 /* Rows off screen are not rendered; CodeView gives each chunk its real height. */
 .code-chunk {
 	content-visibility: auto;
@@ -27,7 +35,8 @@
 	min-width: 0;
 }
 
-/* A row scrolled or focused into view (a search hit, Tab) lands below the sticky header. */
+/* What is scrolled or focused into view (a search hit, Tab) lands below the sticky header. */
+.code-view,
 .ln,
 .ln-fold,
 .imp-link {
@@ -110,9 +119,13 @@ a.ln-no:hover {
 	@apply font-sans text-xs leading-5 text-deleted;
 }
 
-/* The line a link points at (`?line=`). After the change marks: it wins over their tint. */
+/*
+ * The line a link points at (`?line=`). After the change marks: it wins over their tint. The frame
+ * is the theme's ring colour as it is. Of two colours with an opacity in one rule the build keeps
+ * only the first one's (here the tint's): a second, as in `ring-primary/40`, comes out solid.
+ */
 .ln.is-target {
-	@apply bg-primary/12 ring-1 ring-primary/40 ring-inset;
+	@apply bg-primary/12 ring-1 ring-ring ring-inset;
 }
 
 .ln.is-target .ln-no {
@@ -148,9 +161,12 @@ a.ln-no:hover {
 	grid-column: 3;
 }
 
-/* The file an import line leads to, as a chip after the line. */
+/*
+ * The file an import line leads to, as a chip after the line. Not selectable: a copied line is the
+ * code, without the chip's file name stuck to its end.
+ */
 .imp-link {
-	@apply ml-3 inline-flex items-center gap-1 rounded-sm bg-muted px-1.5 align-middle font-sans text-xs leading-4 whitespace-nowrap text-muted-foreground outline-none;
+	@apply ml-3 inline-flex items-center gap-1 rounded-sm bg-muted px-1.5 align-middle font-sans text-xs leading-4 whitespace-nowrap text-muted-foreground outline-none select-none;
 }
 
 .imp-link:hover,
