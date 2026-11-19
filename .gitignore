@@ -1,0 +1,7 @@
+node_modules/
+.review-atlas/
+dist/
+*.log
+
+# Review files of private repositories: they name local paths and describe a project's layout.
+reviews/local/

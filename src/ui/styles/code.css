@@ -1,0 +1,178 @@
+/* The code view: gutter, line numbers, tints, removed lines, folds, import links. */
+
+.code-view {
+	--digits: 3;
+	margin: 12px 18px 0;
+	padding: 6px 0;
+	border: 1px solid var(--rule);
+	border-radius: var(--radius-m);
+	background: var(--surface);
+	color: light-dark(#24292e, #e1e4e8);
+	font-family: var(--font-code);
+	font-size: var(--code-size);
+	line-height: var(--code-line);
+	tab-size: 2;
+	overflow-x: auto;
+}
+
+.code-chunk {
+	content-visibility: auto;
+	min-width: max-content;
+}
+
+.code-view.is-wrap .code-chunk {
+	min-width: 0;
+}
+
+.ln {
+	display: grid;
+	grid-template-columns: 4px calc(var(--digits) * 1ch + 22px) minmax(0, 1fr);
+	height: var(--code-line);
+	scroll-margin-top: 110px;
+}
+
+.code-view.is-wrap .ln {
+	height: auto;
+	min-height: var(--code-line);
+}
+
+.ln-mark {
+	align-self: stretch;
+}
+
+.ln-no {
+	padding-right: 14px;
+	color: var(--ink-3);
+	text-align: right;
+	user-select: none;
+	font-size: 0.92em;
+}
+
+a.ln-no:hover {
+	color: var(--accent);
+}
+
+.ln-code {
+	padding-right: 24px;
+	white-space: pre;
+}
+
+.code-view.is-wrap .ln-code {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+/* Change marks: the gutter bar carries the meaning, the tint makes the stretch easy to find */
+.ln.ch-modified {
+	background: var(--tint-modified);
+}
+
+.ln.ch-modified .ln-mark {
+	background: var(--modified);
+}
+
+.ln.ch-added {
+	background: var(--tint-added);
+}
+
+.ln.ch-added .ln-mark {
+	background: var(--added);
+}
+
+.ln.is-removed {
+	background: var(--tint-removed);
+}
+
+.ln.is-removed .ln-mark {
+	background: var(--deleted);
+}
+
+.ln.is-removed .ln-no {
+	color: var(--deleted);
+}
+
+.ln.is-removed .ln-code {
+	opacity: 0.85;
+}
+
+.ln.is-marker {
+	background: var(--tint-removed);
+	color: var(--deleted);
+	font-family: var(--font-ui);
+	font-size: var(--fs-s);
+}
+
+.ln.is-marker .ln-mark {
+	background: var(--deleted);
+}
+
+.ln.is-target {
+	background: var(--tint-target);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.ln.is-target .ln-no {
+	color: var(--accent);
+	font-weight: 700;
+}
+
+.ln-fold {
+	display: block;
+	width: 100%;
+	height: 26px;
+	padding: 0 0 0 calc(var(--digits) * 1ch + 26px);
+	border: 0;
+	border-top: 1px dashed var(--rule);
+	border-bottom: 1px dashed var(--rule);
+	background: var(--surface-2);
+	color: var(--ink-2);
+	font-family: var(--font-ui);
+	font-size: var(--fs-s);
+	text-align: left;
+	cursor: pointer;
+}
+
+.ln-fold:hover {
+	background: var(--sunken);
+	color: var(--accent);
+}
+
+.imp-link {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	margin-left: 14px;
+	padding: 0 6px;
+	border-radius: var(--radius-s);
+	background: var(--sunken);
+	color: var(--ink-2);
+	font-family: var(--font-ui);
+	font-size: var(--fs-xs);
+	line-height: 16px;
+	vertical-align: 1px;
+	white-space: nowrap;
+}
+
+.imp-link .icon-svg {
+	width: 11px;
+	height: 11px;
+}
+
+.imp-link:hover {
+	background: var(--accent-soft);
+	color: var(--accent);
+}
+
+/* Token styles from the highlighter (colours are per file, in the view's own sheet) */
+.fi {
+	font-style: italic;
+}
+.fb {
+	font-weight: 700;
+}
+.fu {
+	text-decoration: underline;
+}
+.fs {
+	text-decoration: line-through;
+}

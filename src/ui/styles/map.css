@@ -1,0 +1,558 @@
+/* The map view: bar, canvas, nodes, lines, controls, legend, tooltip. */
+
+.map-view {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+}
+
+.map-bar {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-height: 44px;
+	padding: 6px 14px;
+	border-bottom: 1px solid var(--rule);
+	background: var(--surface);
+}
+
+.map-bar-spacer {
+	flex: 1;
+}
+
+.map-bar-label {
+	color: var(--ink-3);
+	font-size: var(--fs-s);
+}
+
+.breadcrumb {
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 2px 0;
+	min-width: 0;
+	font-size: var(--fs-m);
+}
+
+.crumb a {
+	color: var(--accent);
+}
+
+.crumb a:hover {
+	text-decoration: underline;
+}
+
+.crumb-sep {
+	margin: 0 7px;
+	color: var(--ink-3);
+}
+
+.crumb-current {
+	font-weight: 650;
+}
+
+.map-canvas {
+	position: relative;
+	flex: 1;
+	min-height: 0;
+}
+
+.map-canvas .react-flow {
+	--xy-background-color: var(--paper);
+	background: var(--paper);
+}
+
+/* Nodes ------------------------------------------------------------------------------------ */
+
+.react-flow__node {
+	cursor: pointer;
+}
+
+.react-flow__node-frame {
+	cursor: default;
+}
+
+.map-anchor {
+	opacity: 0;
+	pointer-events: none;
+}
+
+.map-node {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	border: 1px solid var(--rule-strong);
+	border-radius: var(--radius-l);
+	background: var(--surface);
+	color: var(--ink);
+	transition:
+		opacity 120ms,
+		border-color 120ms;
+}
+
+.react-flow__node:hover .map-node {
+	border-color: var(--ink-2);
+}
+
+.map-group {
+	display: grid;
+	grid-template-rows: auto 1fr auto;
+	padding: 8px 10px 9px;
+	overflow: hidden;
+}
+
+.map-group-title {
+	display: flex;
+	gap: 6px;
+	align-items: baseline;
+	font-size: 14.5px;
+	font-weight: 650;
+	line-height: 1.22;
+}
+
+.map-group-index {
+	flex: none;
+	color: var(--ink-3);
+	font-weight: 600;
+}
+
+/* Two lines at most, so the counts below keep their place; the node's tooltip has the full title. */
+.map-group-label {
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+	overflow-wrap: anywhere;
+}
+
+.map-group-files {
+	white-space: nowrap;
+}
+
+.map-group-meta {
+	display: flex;
+	align-items: end;
+	justify-content: space-between;
+	gap: 8px;
+	color: var(--ink-2);
+	font-size: 12.5px;
+}
+
+.map-group-meta .delta {
+	font-size: 12px;
+}
+
+.map-group-foot {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-top: 5px;
+}
+
+.status-stack {
+	display: flex;
+	flex: 1;
+	gap: 1px;
+	height: 5px;
+	border-radius: 2px;
+	overflow: hidden;
+	background: var(--sunken);
+}
+
+.status-stack i {
+	display: block;
+	height: 100%;
+	background: var(--st);
+}
+
+.map-group-seen {
+	color: var(--ink-3);
+	font-size: 11.5px;
+	white-space: nowrap;
+}
+
+.map-group-progress {
+	position: absolute;
+	left: 0;
+	bottom: 0;
+	height: 2px;
+	background: var(--accent);
+}
+
+.map-file {
+	display: grid;
+	grid-template-rows: auto auto 1fr;
+	align-content: start;
+	padding: 5px 8px 6px 11px;
+	border-left: 3px solid var(--st);
+	border-radius: var(--radius-m);
+}
+
+.map-file-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+}
+
+.map-file-row:last-child {
+	align-self: end;
+}
+
+.map-file-name {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 14px;
+	font-weight: 600;
+}
+
+.map-file.is-viewed .map-file-name {
+	color: var(--ink-2);
+	font-weight: 500;
+}
+
+.map-file-hint {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	direction: rtl;
+	text-align: left;
+	color: var(--ink-3);
+	font-size: 12px;
+}
+
+.map-file-outside {
+	flex: 1;
+	color: var(--ink-2);
+	font-size: 11.5px;
+}
+
+.map-file .size-bar {
+	width: 26px;
+}
+
+/* Context nodes: neighbours outside the current group, muted */
+.map-node.is-context {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 0 10px;
+	border-style: dashed;
+	border-color: var(--rule-strong);
+	background: var(--surface-2);
+	color: var(--ink-2);
+}
+
+.map-file.is-context {
+	border-left-style: solid;
+	border-left-width: 3px;
+	border-left-color: color-mix(in srgb, var(--st) 55%, transparent);
+	display: grid;
+	grid-template-rows: auto auto;
+	align-content: center;
+	gap: 0;
+}
+
+.map-context-label {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 13px;
+	font-weight: 550;
+}
+
+.map-context-count,
+.map-context-hint {
+	color: var(--ink-3);
+	font-size: 11.5px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.map-frame {
+	width: 100%;
+	height: 100%;
+	border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--rule));
+	border-radius: 12px;
+	background: color-mix(in srgb, var(--accent) 3%, transparent);
+}
+
+/* Hover: the hovered node's neighbourhood stays, the rest dims */
+.react-flow__node.is-dim {
+	opacity: 0.28;
+}
+
+.react-flow__node.is-focus .map-node {
+	border-color: var(--accent);
+	box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Lines ------------------------------------------------------------------------------------ */
+
+.imp-edge {
+	--line: var(--edge);
+}
+
+.imp-line {
+	fill: none;
+	stroke: var(--line);
+	stroke-linecap: round;
+}
+
+.imp-arrow {
+	fill: var(--line);
+}
+
+.imp-edge.is-type .imp-line {
+	stroke-dasharray: 5 4;
+}
+
+/* A relation of the base commit (to or from a deleted file): dotted */
+.imp-edge.is-before .imp-line {
+	stroke-dasharray: 1.5 4;
+}
+
+.imp-edge.is-cycle {
+	/* Muted on the line, full colour on the arrowhead and the label: a level with a large cycle
+	   would otherwise be one magenta knot. */
+	--line: color-mix(in srgb, var(--cycle) 55%, var(--edge));
+}
+
+.imp-edge.is-cycle .imp-arrow {
+	fill: var(--cycle);
+}
+
+.imp-edge.kind-link {
+	--line: color-mix(in srgb, var(--edge) 80%, var(--paper));
+}
+
+.imp-edge.kind-link.is-cycle {
+	--line: color-mix(in srgb, var(--cycle) 55%, var(--edge));
+}
+
+.imp-edge.kind-detail {
+	display: none;
+}
+
+.react-flow__edge.is-lit .imp-edge {
+	--line: var(--edge-strong);
+}
+
+.react-flow__edge.is-lit .imp-edge.is-cycle {
+	--line: var(--cycle);
+}
+
+.react-flow__edge.is-lit .imp-edge.kind-detail {
+	display: inline;
+}
+
+.react-flow__edge.is-dim {
+	opacity: 0.12;
+}
+
+.imp-label rect {
+	fill: var(--surface);
+	stroke: var(--line);
+	stroke-width: 1;
+}
+
+.imp-label text {
+	fill: var(--ink);
+	font-family: var(--font-ui);
+	font-size: 11px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+
+.imp-cycle-mark {
+	fill: var(--cycle);
+}
+
+.imp-edge.is-cycle .imp-label rect {
+	stroke: var(--cycle);
+}
+
+/* React Flow's own edge wrapper must not swallow the pointer over the canvas */
+.react-flow__edge {
+	pointer-events: none;
+}
+
+/* Controls, legend, note, tooltip --------------------------------------------------------- */
+
+.map-controls {
+	position: absolute;
+	top: 12px;
+	right: 12px;
+	z-index: 5;
+	display: flex;
+	gap: 6px;
+	align-items: center;
+}
+
+.map-controls .segmented {
+	background: var(--sunken);
+	box-shadow: 0 0 0 1px var(--rule);
+}
+
+.map-legend {
+	position: absolute;
+	top: 52px;
+	right: 12px;
+	z-index: 5;
+	display: grid;
+	gap: 7px;
+	width: 300px;
+	padding: 12px 14px;
+	border: 1px solid var(--rule);
+	border-radius: var(--radius-l);
+	background: var(--surface);
+	box-shadow: var(--shadow-float);
+	font-size: var(--fs-s);
+	color: var(--ink-2);
+}
+
+.legend-row {
+	display: grid;
+	grid-template-columns: 44px 1fr;
+	align-items: center;
+	gap: 10px;
+}
+
+.legend-line {
+	fill: none;
+	stroke: var(--edge-strong);
+	stroke-width: 2;
+}
+
+.legend-line.is-type {
+	stroke-dasharray: 5 4;
+}
+
+.legend-line.is-cycle {
+	stroke: var(--cycle);
+}
+
+.legend-line.is-before {
+	stroke-dasharray: 1.5 4;
+	stroke-linecap: round;
+}
+
+.legend-arrow {
+	fill: var(--edge-strong);
+}
+
+.legend-count {
+	justify-self: center;
+	padding: 0 6px;
+	border: 1px solid var(--edge);
+	border-radius: 4px;
+	color: var(--ink);
+	font-size: 10.5px;
+	font-weight: 600;
+	line-height: 16px;
+}
+
+.legend-context {
+	justify-self: center;
+	width: 36px;
+	height: 14px;
+	border: 1px dashed var(--rule-strong);
+	border-radius: 4px;
+	background: var(--surface-2);
+}
+
+.legend-status {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px 14px;
+	padding-top: 4px;
+	border-top: 1px solid var(--rule);
+}
+
+.legend-status-item {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.legend-status-item i {
+	width: 10px;
+	height: 10px;
+	border-radius: 2px;
+	background: var(--st);
+}
+
+.map-note {
+	position: absolute;
+	left: 14px;
+	bottom: 12px;
+	z-index: 5;
+	display: grid;
+	gap: 2px;
+	color: var(--ink-3);
+	font-size: var(--fs-xs);
+}
+
+.map-tip {
+	position: absolute;
+	z-index: 20;
+	display: grid;
+	gap: 4px;
+	width: 320px;
+	padding: 9px 11px;
+	border: 1px solid var(--rule-strong);
+	border-radius: var(--radius-m);
+	background: var(--surface);
+	box-shadow: var(--shadow-float);
+	font-size: var(--fs-s);
+	color: var(--ink-2);
+	pointer-events: none;
+}
+
+.map-tip-title {
+	color: var(--ink);
+	font-weight: 650;
+	overflow-wrap: anywhere;
+}
+
+.map-tip-row b {
+	color: var(--ink);
+	font-weight: 600;
+}
+
+.map-tip-key {
+	color: var(--ink-3);
+}
+
+.map-tip-hint {
+	color: var(--ink-3);
+	font-size: var(--fs-xs);
+}
+
+.map-minimap {
+	--xy-minimap-background-color: var(--surface);
+	--xy-minimap-mask-background-color: color-mix(in srgb, var(--paper) 70%, transparent);
+	border: 1px solid var(--rule);
+	border-radius: var(--radius-m);
+}
+
+.map-minimap .mm-node {
+	fill: var(--rule-strong);
+}
+
+.map-minimap .mm-context {
+	fill: var(--sunken);
+}
+
+.map-minimap .mm-frame {
+	fill: none;
+	stroke: var(--accent);
+}

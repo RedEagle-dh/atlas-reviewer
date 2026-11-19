@@ -1,0 +1,385 @@
+/* The file page: sticky header, neighbourhood, banners. */
+
+.file-page {
+	min-height: 100%;
+	padding-bottom: 40vh;
+}
+
+.file-head {
+	position: sticky;
+	top: 0;
+	z-index: 10;
+	display: grid;
+	gap: 6px;
+	padding: 10px 18px 8px;
+	border-bottom: 1px solid var(--rule);
+	background: var(--surface);
+}
+
+.file-head-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+}
+
+.file-head-spacer {
+	flex: 1;
+}
+
+.file-path {
+	display: flex;
+	min-width: 0;
+	white-space: nowrap;
+	font-size: var(--fs-l);
+}
+
+.file-path-dirs {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	direction: rtl;
+}
+
+.file-path-dir a {
+	color: var(--ink-2);
+}
+
+.file-path-dir a:hover {
+	color: var(--accent);
+	text-decoration: underline;
+}
+
+.file-path-sep {
+	margin: 0 2px;
+	color: var(--ink-3);
+}
+
+.file-path-name {
+	flex: none;
+	font-weight: 680;
+	letter-spacing: -0.01em;
+}
+
+.file-head-meta {
+	min-height: 28px;
+	font-size: var(--fs-s);
+}
+
+.file-chapter {
+	color: var(--ink-2);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.file-chapter:hover {
+	color: var(--accent);
+}
+
+.file-renamed,
+.file-note {
+	color: var(--ink-2);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.section-toggle .icon-svg {
+	width: 13px;
+	height: 13px;
+	color: var(--ink-3);
+}
+
+.viewed-toggle .icon-svg {
+	color: var(--ink-3);
+}
+
+.viewed-toggle.is-viewed {
+	border-color: color-mix(in srgb, var(--accent) 50%, var(--rule));
+	background: var(--accent-soft);
+}
+
+.viewed-toggle.is-viewed .icon-svg {
+	color: var(--accent);
+	stroke-width: 2.2;
+}
+
+.viewed-toggle.is-stale .icon-svg {
+	color: var(--modified);
+}
+
+.file-nav {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.file-nav a[aria-disabled="true"] {
+	pointer-events: none;
+	color: var(--ink-3);
+	background: transparent;
+}
+
+.file-nav-pos {
+	min-width: 64px;
+	color: var(--ink-3);
+	font-size: var(--fs-s);
+	text-align: center;
+}
+
+.code-controls {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.change-nav {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	margin-left: 4px;
+}
+
+.change-pos {
+	min-width: 92px;
+	color: var(--ink-2);
+	text-align: center;
+	white-space: nowrap;
+}
+
+/* Neighbourhood --------------------------------------------------------------------------- */
+
+.neighbourhood {
+	border-bottom: 1px solid var(--rule);
+	background: var(--surface-2);
+}
+
+.section-toggle {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	height: 34px;
+	padding: 0 16px;
+	border: 0;
+	background: transparent;
+	color: var(--ink);
+	font-weight: 650;
+	text-align: left;
+	cursor: pointer;
+}
+
+.nb-grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 72px minmax(150px, 220px) 72px minmax(0, 1fr);
+	align-items: start;
+	padding: 0 18px 14px;
+}
+
+.nb-head {
+	height: 28px;
+	color: var(--ink-3);
+	font-size: var(--fs-s);
+	line-height: 28px;
+}
+
+.nb-importers .nb-head {
+	text-align: left;
+}
+
+/* The one line for a file no extractor reads, in place of the grid. */
+.nb-none {
+	margin: 0;
+	padding: 0 18px 12px;
+	color: var(--ink-3);
+	font-size: var(--fs-s);
+}
+
+.nb-list {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.nb-row {
+	position: relative;
+	display: grid;
+	grid-template-columns: 16px minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 7px;
+	height: 26px;
+	margin-bottom: 4px;
+	padding: 0 8px;
+	border: 1px solid var(--rule);
+	border-radius: var(--radius-m);
+	background: var(--surface);
+	font-size: var(--fs-s);
+}
+
+.nb-row:hover {
+	border-color: var(--ink-3);
+}
+
+.nb-row.is-type {
+	border-style: dashed;
+}
+
+.nb-row.where-unchanged,
+.nb-row.where-excluded {
+	background: transparent;
+	color: var(--ink-2);
+}
+
+.nb-path {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	direction: rtl;
+	text-align: left;
+}
+
+.nb-dir {
+	color: var(--ink-3);
+}
+
+.nb-name {
+	font-weight: 600;
+	color: var(--ink);
+}
+
+.nb-tag {
+	color: var(--ink-3);
+	font-size: var(--fs-xs);
+	white-space: nowrap;
+}
+
+.nb-names {
+	position: absolute;
+	left: 0;
+	top: calc(100% + 4px);
+	z-index: 12;
+	display: none;
+	max-width: 420px;
+	padding: 6px 9px;
+	border: 1px solid var(--rule-strong);
+	border-radius: var(--radius-m);
+	background: var(--surface);
+	box-shadow: var(--shadow-float);
+	color: var(--ink-2);
+	font-family: var(--font-code);
+	font-size: var(--fs-xs);
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+
+.nb-names b {
+	margin-right: 6px;
+	font-family: var(--font-ui);
+	color: var(--ink);
+}
+
+.nb-row:hover .nb-names,
+.nb-row:focus-visible .nb-names {
+	display: block;
+}
+
+.nb-more {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+}
+
+.nb-more .btn {
+	height: 24px;
+	padding: 0 6px;
+	color: var(--accent);
+}
+
+.nb-packages {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 6px;
+	margin-top: 8px;
+	font-size: var(--fs-s);
+}
+
+.nb-packages-label {
+	color: var(--ink-3);
+	margin-right: 2px;
+}
+
+.nb-package {
+	padding: 1px 6px;
+	border: 1px solid var(--rule);
+	border-radius: var(--radius-s);
+	color: var(--ink-2);
+	background: var(--surface);
+}
+
+.nb-package.is-type {
+	border-style: dashed;
+}
+
+.nb-unresolved code {
+	color: var(--deleted);
+}
+
+.nb-lines {
+	overflow: visible;
+}
+
+.nb-line path {
+	fill: none;
+	stroke: var(--edge);
+	stroke-width: 1.3;
+}
+
+.nb-line polygon {
+	fill: var(--edge);
+}
+
+.nb-line.where-review path {
+	stroke: var(--edge-strong);
+}
+
+.nb-line.where-review polygon {
+	fill: var(--edge-strong);
+}
+
+.nb-line.is-type path {
+	stroke-dasharray: 4 3;
+}
+
+.nb-centre {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	height: 56px;
+	padding: 0 12px;
+	border: 1.5px solid var(--ink-2);
+	border-radius: var(--radius-l);
+	background: var(--surface);
+	font-weight: 680;
+	overflow: hidden;
+}
+
+.nb-centre-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* Banners --------------------------------------------------------------------------------- */
+
+.banner {
+	margin: 12px 18px 0;
+	padding: 9px 12px;
+	border: 1px solid var(--rule);
+	border-left: 3px solid var(--ink-3);
+	border-radius: var(--radius-m);
+	background: var(--surface);
+	color: var(--ink-2);
+}
