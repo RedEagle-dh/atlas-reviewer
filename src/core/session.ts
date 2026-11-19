@@ -169,18 +169,20 @@ export class ReviewSession {
 
 	/**
 	 * Records a comment in a range, at the range's head of this moment: the commit its line
-	 * numbers belong to. `null` when the path is no file of the range (see `sourceOf`); a draft
-	 * that breaks a rule rejects with `InvalidCommentError`. The new comment is the last entry.
+	 * numbers belong to. With `draft.head` (the head the writer's page shows) a range that has
+	 * moved on throws `RangeMovedError` and nothing is written: the line numbers were read off
+	 * another commit. `null` when the path is no file of the range (see `sourceOf`); a draft that
+	 * breaks a rule rejects with `InvalidCommentError`. The new comment is the last entry.
 	 */
 	async addComment(draft: CommentDraft): Promise<CommentsState | null> {
 		const build = await this.build(draft.range);
+		const { range: _asked, head: shown, ...content } = draft;
+		const { headSha } = build.resolved;
+		// Before the path: in the new state the file may be gone, and "not found" would hide why.
+		if (shown !== undefined && shown !== headSha)
+			throw new RangeMovedError(build.resolved.range.id, shown, headSha);
 		if (!sourceOf(build, draft.path)) return null;
-		const { range: _asked, ...content } = draft;
-		return this.commentStore.add({
-			...content,
-			range: build.resolved.range.id,
-			head: build.resolved.headSha,
-		});
+		return this.commentStore.add({ ...content, range: build.resolved.range.id, head: headSha });
 	}
 
 	/** `null` for an unknown id. */

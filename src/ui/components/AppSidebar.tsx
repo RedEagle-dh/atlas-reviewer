@@ -2,7 +2,13 @@
  * The sidebar: the review's title and the range switch, the visible files by chapter (in reading
  * order) or by folder, and the overall progress. One row per file.
  */
-import { ChevronRightIcon, ChevronsUpDownIcon, GitCompareArrowsIcon, MapIcon } from "lucide-react";
+import {
+	ChevronRightIcon,
+	ChevronsUpDownIcon,
+	GitCompareArrowsIcon,
+	MapIcon,
+	MessageSquareIcon,
+} from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
@@ -40,6 +46,7 @@ import { baseName, countViewed, dirName, ltr, shortSha, viewedMark } from "../li
 import { buildDirTree, type DirNode } from "../lib/tree";
 import { fileRoute, mapRoute, withRange } from "../router";
 import { useAtlas } from "../state/atlas";
+import { useComments } from "../state/comments";
 import { useChoice } from "../state/prefs";
 import { navigate, useRoute } from "../state/route";
 import { fmt, S } from "../strings";
@@ -149,12 +156,15 @@ const FileRow = memo(function FileRow({
 	current,
 	mark,
 	href,
+	comments,
 }: {
 	file: ChangedFile;
 	hint?: string;
 	current: boolean;
 	mark: ReturnType<typeof viewedMark>;
 	href: string;
+	/** How many comments the file has; a number, so the row is drawn again only when it changes. */
+	comments: number;
 }) {
 	const ref = useRef<HTMLAnchorElement>(null);
 	useEffect(() => {
@@ -190,6 +200,18 @@ const FileRow = memo(function FileRow({
 				>
 					{ltr(hint ?? "")}
 				</span>
+				{comments > 0 ? (
+					<span
+						className={cn("flex shrink-0 items-center gap-0.5 text-xs tabular-nums", QUIET)}
+						title={S.commentCount(comments)}
+						role="img"
+						aria-label={S.commentCount(comments)}
+						data-comments-count={comments}
+					>
+						<MessageSquareIcon className="size-3!" aria-hidden="true" />
+						{fmt(comments)}
+					</span>
+				) : null}
 				<SizeBar added={file.added} deleted={file.deleted} />
 				{/* The mark's own size: the button would draw every icon inside it larger. */}
 				<ViewedMark mark={mark} className="[&_svg]:size-3.5!" />
@@ -234,6 +256,7 @@ function useClosed(): [ReadonlySet<string>, (id: string) => void] {
 
 function ChapterList({ current }: { current: string | null }) {
 	const { meta, reading, viewed, href } = useAtlas();
+	const { byPath: comments } = useComments();
 	const [closed, toggle] = useClosed();
 	const chapters = meta.chapters
 		.map((chapter, i) => ({
@@ -300,6 +323,7 @@ function ChapterList({ current }: { current: string | null }) {
 									current={file.path === current}
 									mark={viewedMark(file, viewed)}
 									href={href(fileRoute({ path: file.path }))}
+									comments={comments.get(file.path)?.length ?? 0}
 								/>
 							))}
 						</SidebarMenu>
@@ -322,6 +346,7 @@ function DirBranch({
 	toggle: (dir: string) => void;
 }) {
 	const { viewed, href } = useAtlas();
+	const { byPath: comments } = useComments();
 	return (
 		<>
 			{node.dirs.map((dir) => {
@@ -374,6 +399,7 @@ function DirBranch({
 					current={file.path === current}
 					mark={viewedMark(file, viewed)}
 					href={href(fileRoute({ path: file.path }))}
+					comments={comments.get(file.path)?.length ?? 0}
 				/>
 			))}
 		</>

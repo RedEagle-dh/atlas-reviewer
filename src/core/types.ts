@@ -319,7 +319,7 @@ export interface ReviewComment {
 	text: string;
 	/**
 	 * The range the comment was written in, and that range's head commit then: the commit its
-	 * line numbers belong to.
+	 * line numbers belong to (the one the writer's page showed, see `CommentDraft.head`).
 	 */
 	range: string;
 	head: string;
@@ -334,13 +334,15 @@ export interface CommentsState {
 }
 
 /**
- * Body of `POST /api/comments`. The server makes `id`, `head` (the range's head at that moment)
- * and the timestamps and trims `text`; the new comment is the LAST entry of the answer. 400
- * `bad-request` when a field breaks a rule (the message names it): `path` a non-empty string,
- * `line` and `endLine` positive integers, `endLine` only with `line` and not before it, `text`
- * not empty and at most 10 000 characters, `snippet` at most 8 000 (the limits are constants of
- * `src/core/comments.ts`). 404 `not-found` when `path` is no file of the range's head commit and
- * no deleted file of its base (never a read from disk); 404 `unknown-range`. Unknown fields are
+ * Body of `POST /api/comments`. The server makes `id` and the timestamps, records the range's
+ * head commit of that moment as the comment's `head` and trims `text`; the new comment is the
+ * LAST entry of the answer. 400 `bad-request` when a field breaks a rule (the message names it):
+ * `path` a non-empty string, `line` and `endLine` positive integers, `endLine` only with `line`
+ * and not before it, `text` not empty and at most 10 000 characters, `snippet` at most 8 000
+ * (the limits are constants of `src/core/comments.ts`), `range` and `head` strings. 404
+ * `unknown-range`; 409 `range-moved` when `head` is not the range's head commit (checked before
+ * the path: a moved range is said first); 404 `not-found` when `path` is no file of the range's
+ * head commit and no deleted file of its base (never a read from disk). Unknown fields are
  * ignored.
  */
 export interface CommentDraft {
@@ -353,6 +355,13 @@ export interface CommentDraft {
 	text: string;
 	/** Default: the first range. */
 	range?: string;
+	/**
+	 * The head commit of the model the page shows (`ReviewModel.range.head.sha`): the commit the
+	 * draft's line numbers belong to. When the range has moved on since, nothing is written and
+	 * the answer is 409 `range-moved`, so a comment never names lines of a commit its writer did
+	 * not see. Without it the comment is recorded at whatever the range's head is.
+	 */
+	head?: string;
 }
 
 /**
@@ -369,7 +378,8 @@ export interface CommentEdit {
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Body of every non-2xx answer of `/api/*`. `range-moved` (409): the branch has new commits.
+ * Body of every non-2xx answer of `/api/*`. `range-moved` (409): the branch has new commits
+ * since the page loaded its model (a file, a viewed mark or a comment of the older state).
  * `bad-request` (400) also for a request body that is not sent as `application/json`: only the
  * review's own page can send that type, a page of another site cannot (see `jsonBody` in
  * `src/server/api.ts`). The one answer without this body: a request body above the server's

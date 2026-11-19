@@ -35,8 +35,9 @@ describe("readCommentDraft", () => {
 				snippet: "\tconst a = 1;\n",
 				text: "  why?\n",
 				range: "r",
+				head: HEAD,
 				id: "mine",
-				head: "f00",
+				createdAt: "then",
 			}),
 		).toEqual({
 			path: "src/a.ts",
@@ -45,6 +46,7 @@ describe("readCommentDraft", () => {
 			snippet: "\tconst a = 1;\n",
 			text: "why?",
 			range: "r",
+			head: HEAD,
 		});
 		expect(readCommentDraft({ path: "a.ts", text: "x" })).toEqual({ path: "a.ts", text: "x" });
 	});
@@ -94,6 +96,8 @@ describe("readCommentDraft", () => {
 			"`snippet` must be at most 8000 characters",
 		);
 		expect(problem({ ...ok, range: 3 })).toBe("`range` must be a string");
+		for (const head of [3, null, ["f00"]])
+			expect(problem({ ...ok, head })).toBe("`head` must be a string");
 	});
 
 	test("the limits are inclusive, and the text is measured after trimming", () => {

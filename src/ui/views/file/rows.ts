@@ -2,8 +2,8 @@
  * The rows of the code view: head lines, the base lines a change block replaced (shown inline
  * above the block), markers for removals that are hidden, and folds for unchanged stretches in
  * the mode "Nur Änderungen"; and which change block `n` / `p` go to. Pure, so the subtle parts
- * (where removed lines go, which stretches fold, the step at the end of the page) are tested
- * apart from the rendering.
+ * (where removed lines go, which stretches fold, what never folds, the step at the end of the
+ * page) are tested apart from the rendering.
  */
 import type { ChangeBlock } from "../../../core/types";
 
@@ -29,8 +29,13 @@ export interface RowOptions {
 	showRemoved: boolean;
 	/** Lines kept around a change in the mode `changes`. */
 	context: number;
-	/** `from` lines of folds the reader opened. */
-	unfolded: ReadonlySet<number>;
+	/**
+	 * Head lines that never fold in the mode `changes`: the lines of a fold the reader opened, a
+	 * line with a comment, a line under an open composer. Lines, not folds: a fold is whatever
+	 * stretch is left between them, so a comment written inside an opened fold leaves the lines
+	 * around it open.
+	 */
+	pinned: ReadonlySet<number>;
 	/** No change marks at all (added, deleted or unchanged file): every line, plain. */
 	plain: boolean;
 }
@@ -113,16 +118,17 @@ export function buildRows(
 		});
 	};
 
+	const stays = (l: number) => keep.has(l) || before.has(l) || options.pinned.has(l);
 	let line = 1;
 	while (line <= lineCount) {
-		if (options.mode === "full" || keep.has(line) || before.has(line)) {
+		if (options.mode === "full" || stays(line)) {
 			pushLine(line);
 			line++;
 			continue;
 		}
 		let end = line;
-		while (end + 1 <= lineCount && !keep.has(end + 1) && !before.has(end + 1)) end++;
-		if (end - line + 1 < MIN_FOLD || options.unfolded.has(line)) {
+		while (end + 1 <= lineCount && !stays(end + 1)) end++;
+		if (end - line + 1 < MIN_FOLD) {
 			for (let l = line; l <= end; l++) pushLine(l);
 		} else {
 			rows.push({ kind: "fold", from: line, to: end });
@@ -131,6 +137,37 @@ export function buildRows(
 	}
 	rows.push(...(before.get(lineCount + 1) ?? []));
 	return rows;
+}
+
+/**
+ * True when two rows show the same thing. The rows are built anew whenever a line is pinned, but
+ * most of them come out as they were: a row that is the same need not be rendered again.
+ */
+export function sameRow(a: Row, b: Row): boolean {
+	if (a === b) return true;
+	switch (a.kind) {
+		case "line":
+			return (
+				b.kind === "line" &&
+				a.line === b.line &&
+				a.change === b.change &&
+				a.block === b.block &&
+				a.anchor === b.anchor
+			);
+		case "removed":
+			return (
+				b.kind === "removed" && a.block === b.block && a.index === b.index && a.anchor === b.anchor
+			);
+		case "removal-marker":
+			return (
+				b.kind === "removal-marker" &&
+				a.block === b.block &&
+				a.count === b.count &&
+				a.anchor === b.anchor
+			);
+		case "fold":
+			return b.kind === "fold" && a.from === b.from && a.to === b.to;
+	}
 }
 
 /**

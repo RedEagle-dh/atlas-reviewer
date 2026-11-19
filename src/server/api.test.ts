@@ -13,7 +13,7 @@ import { UnknownRangeError } from "../core/build";
 import { MAX_COMMENT_SNIPPET, MAX_COMMENT_TEXT } from "../core/comments";
 import { type Review, resolveReview } from "../core/define";
 import { type Highlighter, plainLines } from "../core/highlight";
-import { ReviewSession } from "../core/session";
+import { RangeMovedError, ReviewSession } from "../core/session";
 import type { CommentsState, ReviewComment } from "../core/types";
 import { type CommentRequest, createApi, MAX_BODY } from "./api";
 import { type RunningServer, startServer } from "./main";
@@ -233,6 +233,36 @@ describe("session", () => {
 			["tag", "tagged", firstHead],
 		]);
 	});
+
+	test("a draft that names the head its page shows is refused once the range has moved on", async () => {
+		// After the test above: range `r` is at a newer commit than `firstHead`, `tagged` is not.
+		const session = open("moved-head");
+		const now = (await session.model("r")).range.head.sha;
+		expect(now).not.toBe(firstHead);
+		const stale = { path: "src/a.ts", line: 2, text: "written on the old page", range: "r" };
+		const refusal = session.addComment({ ...stale, head: firstHead });
+		await expect(refusal).rejects.toBeInstanceOf(RangeMovedError);
+		await expect(refusal).rejects.toThrow(
+			`range "r" has moved on: the page shows ${firstHead.slice(0, 10)}, the range is at ${now.slice(0, 10)}`,
+		);
+		// The move is said before anything else: in the new state the path might be gone.
+		await expect(
+			session.addComment({ path: "src/nope.ts", text: "x", range: "r", head: firstHead }),
+		).rejects.toBeInstanceOf(RangeMovedError);
+		// Nothing was written, not even the file.
+		expect(await session.comments()).toEqual({ comments: [] });
+		expect(await Bun.file(fileOf("moved-head")).exists()).toBe(false);
+
+		// The head the range is at now, and a range that did not move: both are recorded.
+		await session.addComment({ ...stale, head: now });
+		const state = await session.addComment({ ...stale, range: "tagged", head: firstHead });
+		expect(state?.comments.map((c) => [c.range, c.head])).toEqual([
+			["r", now],
+			["tagged", firstHead],
+		]);
+		// What is stored is the comment, not the draft: `head` once, as the commit it was recorded at.
+		expect(await onDisk("moved-head")).toEqual({ comments: state?.comments ?? [] });
+	});
 });
 
 interface Answer {
@@ -317,8 +347,9 @@ describe("handlers", () => {
 					endLine: 2,
 					snippet: "export const b = 21;",
 					text: "\n Why?  ",
+					head,
 					id: "mine",
-					head: "f00",
+					updatedAt: "never",
 					createdAt: "then",
 				}),
 			),
@@ -494,6 +525,53 @@ describe("handlers", () => {
 			),
 		).toEqual(refusal);
 		expect((await session.comments()).comments[0]?.text).toBe("x");
+	});
+
+	test("a draft for a head the range has left is a 409 `range-moved`; nothing is written", async () => {
+		const session = open("handlers-409");
+		const api = createApi(session);
+		const head = (await session.model("r")).range.head.sha;
+		const draft = { path: "src/a.ts", line: 2, snippet: "export const b = 21;", text: "Why 21?" };
+		const refused = await answerOf(api.addComment(post({ ...draft, head: firstHead })));
+		expect(errorOf(refused)).toEqual([
+			409,
+			"range-moved",
+			`range "r" has moved on: the page shows ${firstHead.slice(0, 10)}, the range is at ${head.slice(0, 10)}`,
+		]);
+		expect(refused.cache).toBe("no-store");
+		// Whatever is not the range's head is a state the range is not in: a short sha, another word.
+		for (const shown of [head.slice(0, 10), "HEAD", ""])
+			expect(
+				errorOf(await answerOf(api.addComment(post({ ...draft, head: shown })))).slice(0, 2),
+			).toEqual([409, "range-moved"]);
+		// A malformed draft is a bad request first; an unknown range is unknown, moved or not.
+		expect(errorOf(await answerOf(api.addComment(post({ ...draft, head: 7 }))))).toEqual([
+			400,
+			"bad-request",
+			"`head` must be a string",
+		]);
+		expect(
+			errorOf(await answerOf(api.addComment(post({ ...draft, text: "", head: firstHead })))),
+		).toEqual([400, "bad-request", "`text` must not be empty"]);
+		expect(
+			errorOf(
+				await answerOf(api.addComment(post({ ...draft, range: "nope", head: firstHead }))),
+			).slice(0, 2),
+		).toEqual([404, "unknown-range"]);
+		expect(await session.comments()).toEqual({ comments: [] });
+		expect(await Bun.file(fileOf("handlers-409")).exists()).toBe(false);
+
+		// The same draft with the head the range is at now is written, at that head.
+		const [one] = commentsOf(await answerOf(api.addComment(post({ ...draft, head }))));
+		expect(one).toMatchObject({ path: "src/a.ts", line: 2, text: "Why 21?", range: "r", head });
+		// A range that ends at a tag has not moved: the page that shows it still writes.
+		const tagged = commentsOf(
+			await answerOf(api.addComment(post({ ...draft, range: "tagged", head: firstHead }))),
+		);
+		expect(tagged.map((c) => [c.range, c.head])).toEqual([
+			["r", head],
+			["tagged", firstHead],
+		]);
 	});
 
 	test("an unknown path or id is a 404 `not-found`, an unknown range a 404 `unknown-range`", async () => {
@@ -680,6 +758,12 @@ describe("the running server", () => {
 				await send("POST", "/api/comments", { path: "src/a.ts", text: "x", range: "nope" }),
 			).slice(0, 2),
 		).toEqual([404, "unknown-range"]);
+		expect(
+			errorOf(
+				await send("POST", "/api/comments", { path: "src/a.ts", text: "x", head: firstHead }),
+			).slice(0, 2),
+		).toEqual([409, "range-moved"]);
+		expect(commentsOf(await send("GET", "/api/comments"))).toEqual([]);
 	});
 
 	test("the body limit holds a comment at its limits, whatever its characters", async () => {

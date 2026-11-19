@@ -128,8 +128,9 @@ export function getComments(options: RequestOptions = {}): Promise<CommentsState
 
 /**
  * POST /api/comments — a comment on lines of a file or on the file as a whole, recorded at the
- * range's head commit; the new comment is the last entry of the answer. 404 `not-found` when the
- * path is no file of the range.
+ * range's head commit; the new comment is the last entry of the answer. `draft.head` names the
+ * commit the page shows: 409 `range-moved` when the range has moved on since, and nothing is
+ * written. 404 `not-found` when the path is no file of the range.
  */
 export function addComment(
 	draft: CommentDraft,

@@ -1,6 +1,7 @@
 /**
  * The header bar above the views: the sidebar switch, the category filter, and on the right the
- * search button and the theme menu. New actions go into the group on the right.
+ * search button, the collected comments and the theme menu. New actions go into the group on the
+ * right.
  */
 import { MonitorIcon, MoonIcon, SearchIcon, SunIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,7 @@ import { categoryCounts } from "../lib/files";
 import { useAtlas } from "../state/atlas";
 import { THEMES, type Theme } from "../state/prefs";
 import { fmt, S } from "../strings";
+import { CommentsPanel } from "./comments/CommentsPanel";
 
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
@@ -176,6 +178,7 @@ export function SiteHeader({
 					</TooltipTrigger>
 					<TooltipContent side="bottom">{S.searchLabel}</TooltipContent>
 				</Tooltip>
+				<CommentsPanel />
 				<ThemeMenu theme={theme} onTheme={onTheme} />
 			</div>
 		</header>

@@ -10,12 +10,25 @@ import {
 	useContext,
 	useEffect,
 	useMemo,
+	useRef,
 	useState,
 	useSyncExternalStore,
 } from "react";
 import type { CommentDraft, CommentEdit, CommentsState, ReviewComment } from "../../core/types";
 import { addComment, clearComments, editComment, getComments, removeComment } from "../api";
 import { commentsByPath } from "../lib/comments";
+import { isRangeMoved } from "./atlas";
+
+/** Why a request failed. */
+export interface CommentFailure {
+	/** The server's message, or the browser's when the server did not answer. */
+	message: string;
+	/**
+	 * The range has new commits since the page loaded its model (409 `range-moved`): nothing was
+	 * written, and the page is loading the new state.
+	 */
+	moved: boolean;
+}
 
 export interface Comments {
 	/** In the order they were written; `sortComments` puts them in reading order. */
@@ -26,12 +39,23 @@ export interface Comments {
 	loaded: boolean;
 	/** The message of the last request that failed; gone when the next one succeeds. */
 	error: string | null;
-	/** Writes a comment in the current range. The comment as the server recorded it; `null` when it failed. */
-	add: (draft: Omit<CommentDraft, "range">) => Promise<ReviewComment | null>;
+	/**
+	 * Writes a comment in the current range, for the head commit the page shows. The comment as
+	 * the server recorded it; `null` when it failed. When the range has moved on since, nothing is
+	 * written and the app loads the new state.
+	 */
+	add: (draft: Omit<CommentDraft, "range" | "head">) => Promise<ReviewComment | null>;
 	/** These three: `false` when the request failed (`error` says why). */
 	edit: (id: string, text: string) => Promise<boolean>;
 	remove: (id: string) => Promise<boolean>;
 	clear: () => Promise<boolean>;
+	/** Asks the server for the list again (after a load that failed). */
+	reload: () => Promise<boolean>;
+	/**
+	 * Why the last request failed, `null` when it did not. For whoever just got `null` or `false`
+	 * from a request: unlike `error` it does not wait for the next render.
+	 */
+	failure: () => CommentFailure | null;
 }
 
 /** The requests the comments are kept with: `../api` in the app, a stand-in in tests. */
@@ -55,15 +79,19 @@ export interface CommentsSnapshot {
 	comments: readonly ReviewComment[];
 	loaded: boolean;
 	error: string | null;
+	/** True when `error` is the server's "the range has moved on" (see `CommentFailure.moved`). */
+	moved: boolean;
 }
 
 /**
  * The comments outside React, so the rules are plain to see (and to test): one request at a
  * time, the server's answer is the state, and after a failure the list is asked for again,
- * because the request may have reached the server or not.
+ * because the request may have reached the server or not. The one failure that says what the
+ * server did is a comment refused because the range has moved on (409 `range-moved`): nothing
+ * was written, so the list is not asked for, and `onMoved` is told to load the new state.
  */
-export function createCommentsStore(api: CommentsApi = SERVER) {
-	let snapshot: CommentsSnapshot = { comments: [], loaded: false, error: null };
+export function createCommentsStore(api: CommentsApi = SERVER, onMoved: () => void = () => {}) {
+	let snapshot: CommentsSnapshot = { comments: [], loaded: false, error: null, moved: false };
 	const listeners = new Set<() => void>();
 	const publish = (next: CommentsSnapshot) => {
 		snapshot = next;
@@ -81,15 +109,18 @@ export function createCommentsStore(api: CommentsApi = SERVER) {
 		const done = queue.then(async () => {
 			try {
 				const state = await send();
-				publish({ comments: state.comments, loaded: true, error: null });
+				publish({ comments: state.comments, loaded: true, error: null, moved: false });
 				return state;
 			} catch (error) {
-				const now = askAgain ? await api.get().catch(() => null) : null;
+				const moved = isRangeMoved(error);
+				const now = askAgain && !moved ? await api.get().catch(() => null) : null;
 				publish({
 					comments: now?.comments ?? snapshot.comments,
 					loaded: snapshot.loaded || now !== null,
 					error: error instanceof Error ? error.message : String(error),
+					moved,
 				});
+				if (moved) onMoved();
 				return null;
 			}
 		});
@@ -114,6 +145,8 @@ export function createCommentsStore(api: CommentsApi = SERVER) {
 		remove: (id: string): Promise<boolean> =>
 			run(() => api.remove(id), true).then((state) => state !== null),
 		clear: (): Promise<boolean> => run(() => api.clear(), true).then((state) => state !== null),
+		failure: (): CommentFailure | null =>
+			snapshot.error === null ? null : { message: snapshot.error, moved: snapshot.moved },
 	};
 }
 
@@ -121,18 +154,38 @@ const CommentsContext = createContext<Comments | null>(null);
 
 /**
  * Comments belong to the review, not to a range, so the provider stays where it is when the
- * range changes; `rangeId` (the range shown) only says where a new comment is written.
+ * range changes. `rangeId` and `head` (the range shown and the head commit of its model, `null`
+ * while that loads) say where a new comment is written and which commit its lines are read off;
+ * `onMoved` loads the model again when the server says the range has left that commit.
  */
-export function CommentsProvider({ rangeId, children }: { rangeId: string; children: ReactNode }) {
-	const [store] = useState(() => createCommentsStore());
+export function CommentsProvider({
+	rangeId,
+	head,
+	onMoved,
+	children,
+}: {
+	rangeId: string;
+	head: string | null;
+	onMoved: () => void;
+	children: ReactNode;
+}) {
+	// The store lives as long as the provider, and so does `add`: both read what the latest render
+	// was given. An "undo" that is pressed after the range changed still writes for the range and
+	// the head the page shows by then.
+	const latest = useRef({ rangeId, head, onMoved });
+	latest.current = { rangeId, head, onMoved };
+	const [store] = useState(() => createCommentsStore(SERVER, () => latest.current.onMoved()));
 	useEffect(() => {
 		store.load();
 	}, [store]);
 	const { comments, loaded, error } = useSyncExternalStore(store.subscribe, store.getSnapshot);
 	const byPath = useMemo(() => commentsByPath(comments), [comments]);
 	const add = useCallback(
-		(draft: Omit<CommentDraft, "range">) => store.add({ ...draft, range: rangeId }),
-		[store, rangeId],
+		(draft: Omit<CommentDraft, "range" | "head">) => {
+			const { rangeId: range, head: shown } = latest.current;
+			return store.add({ ...draft, range, ...(shown === null ? {} : { head: shown }) });
+		},
+		[store],
 	);
 	const value = useMemo<Comments>(
 		() => ({
@@ -144,6 +197,8 @@ export function CommentsProvider({ rangeId, children }: { rangeId: string; child
 			edit: store.edit,
 			remove: store.remove,
 			clear: store.clear,
+			reload: store.load,
+			failure: store.failure,
 		}),
 		[comments, byPath, loaded, error, add, store],
 	);

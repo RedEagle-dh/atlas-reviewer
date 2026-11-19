@@ -75,6 +75,10 @@ export function readCommentDraft(value: unknown): CommentDraft {
 		if (typeof value.range !== "string") throw new InvalidCommentError("`range` must be a string");
 		draft.range = value.range;
 	}
+	if (value.head !== undefined) {
+		if (typeof value.head !== "string") throw new InvalidCommentError("`head` must be a string");
+		draft.head = value.head;
+	}
 	return draft;
 }
 

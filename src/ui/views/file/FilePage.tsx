@@ -1,7 +1,8 @@
 /**
  * The file page (`#/file/<path>?line=<n>`): header with path, status and actions, the
- * neighbourhood ("Zusammenhang"), and the code. Works for any file of the head commit; a file
- * outside the review is shown read-only and marked as such.
+ * neighbourhood ("Zusammenhang"), the comments on the file as a whole, and the code with the
+ * comments on its lines. Works for any file of the head commit; a file outside the review is
+ * shown read-only and marked as such (it can be commented all the same).
  */
 import {
 	BinaryIcon,
@@ -17,6 +18,7 @@ import {
 	FileIcon,
 	FileXIcon,
 	MapIcon,
+	MessageSquarePlusIcon,
 	ScissorsIcon,
 } from "lucide-react";
 import { Fragment, type ReactNode, useEffect, useLayoutEffect, useMemo, useState } from "react";
@@ -36,14 +38,20 @@ import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import type { ChangedFile, FileView } from "../../../core/types";
+import type { ChangedFile, FileView, ReviewComment } from "../../../core/types";
 import { ApiError, getFile } from "../../api";
+import { CommentCard } from "../../components/comments/CommentCard";
+import { Composer, openComposer } from "../../components/comments/Composer";
 import { Delta, StatusBadge } from "../../components/marks";
 import { ErrorView, Loading, Notice } from "../../components/states";
+import { copyText } from "../../lib/clipboard";
 import { baseName, ltr, viewedMark } from "../../lib/files";
 import { readStored } from "../../lib/storage";
+import { placeComments } from "../../lib/threads";
 import { fileRoute, type Grouping, mapRoute, type Route, readFileParams } from "../../router";
 import { isRangeMoved, useAtlas } from "../../state/atlas";
+import { useComments } from "../../state/comments";
+import { type Composer as ComposerState, composers, useComposer } from "../../state/composer";
 import { useKeys } from "../../state/keys";
 import { useChoice, useFlag } from "../../state/prefs";
 import { useResource } from "../../state/resource";
@@ -107,13 +115,62 @@ function buttonLook(look: Parameters<typeof buttonVariants>[0]): string {
 	return cn(buttonVariants(look));
 }
 
-/** What an icon-only control does and which key does the same: on hover and on keyboard focus. */
+/** What a control does and which key does the same: on hover and on keyboard focus. */
 function Hint({ label, keys }: { label: string; keys?: string }) {
 	return (
 		<TooltipContent>
 			{label}
 			{keys ? <Kbd>{keys}</Kbd> : null}
 		</TooltipContent>
+	);
+}
+
+/**
+ * The two labelled controls of the header's first row in a narrow header: the path is the page's
+ * heading and needs the room (a deep path keeps its file name whole and its last folder in view),
+ * so they are left with their icons. The name stays for a screen reader, and the tooltip says it.
+ * "Auf der Karte zeigen" gives way first: the map is also a click on any folder of the path away.
+ */
+const NARROW = {
+	map: { button: "px-2 @4xl/file:pr-2.5", label: "sr-only @4xl/file:not-sr-only" },
+	comment: { button: "px-2 @2xl/file:pr-2.5", label: "sr-only @2xl/file:not-sr-only" },
+} as const;
+
+const NO_COMMENTS: readonly ReviewComment[] = [];
+
+/**
+ * "Kommentare zur Datei": the comments on the file as a whole, those whose lines are no longer
+ * there, and the composer for a new one. Not rendered when it would hold nothing.
+ */
+function FileComments({
+	view,
+	comments,
+	composer,
+}: {
+	view: FileView;
+	comments: readonly ReviewComment[];
+	/** The composer when it is open for the whole file. */
+	composer: ComposerState | null;
+}) {
+	return (
+		<section className="border-b px-4 pt-2 pb-4" aria-labelledby="file-comments">
+			{/* The size and weight of the section before it ("Zusammenhang"), whose heading is a button. */}
+			<h3 id="file-comments" className="flex min-h-7 items-center text-[0.8rem] font-medium">
+				{S.fileComments}
+			</h3>
+			<div className="flex max-w-4xl flex-col gap-2 pt-1" data-comments="">
+				{comments.map((comment) => (
+					<CommentCard
+						key={comment.id}
+						comment={comment}
+						// On lines, and listed here: the lines are gone.
+						outdated={comment.line !== undefined && "gone"}
+						fallbackFocus="[data-comment-file]"
+					/>
+				))}
+				{composer ? <Composer path={view.path} composer={composer} lines={view.lines} /> : null}
+			</div>
+		</section>
 	);
 }
 
@@ -191,17 +248,9 @@ function CopyButton({ text }: { text: string }) {
 		const t = setTimeout(() => setCopied(false), 1400);
 		return () => clearTimeout(t);
 	}, [copied]);
-	const copy = () => {
-		// No clipboard outside a secure context (the server reached by a plain http address).
-		const written = navigator.clipboard?.writeText(text);
-		if (!written) {
-			toast.error(S.copyFailed);
-			return;
-		}
-		written.then(
-			() => setCopied(true),
-			() => toast.error(S.copyFailed),
-		);
+	const copy = async () => {
+		if (await copyText(text)) setCopied(true);
+		else toast.error(S.copyFailed);
 	};
 	return (
 		<Tooltip>
@@ -304,6 +353,24 @@ function Loaded({
 	const neighbours = useMemo(() => neighboursOf(view, byPath), [view, byPath]);
 	const links = useMemo(() => importLinks(view), [view]);
 
+	// The comments: on lines the page shows they hang in the code, the others are listed above it.
+	const lineCount = view.binary ? 0 : view.lines.length;
+	const comments = useComments().byPath.get(view.path) ?? NO_COMMENTS;
+	const placed = useMemo(() => placeComments(comments, lineCount), [comments, lineCount]);
+	const composer = useComposer(view.path);
+	const composerEnd = composer?.endLine ?? composer?.line;
+	const composerFits = composerEnd === undefined || composerEnd <= lineCount;
+	// Written for lines that are gone since (the range moved on and the file got shorter).
+	useEffect(() => {
+		if (!composerFits) composers.toFile(view.path);
+	}, [composerFits, view.path]);
+	// The reader leaves the file: an empty composer closes, one with text waits for the return.
+	useEffect(() => () => composers.leave(view.path), [view.path]);
+	const fileComposer = composer && composer.line === undefined ? composer : null;
+	const lineComposer = composer && composer.line !== undefined && composerFits ? composer : null;
+	/** The line `c` comments: the one a link points at, when the page has it. */
+	const keyLine = line !== undefined && line <= lineCount ? line : undefined;
+
 	const position = reading.findIndex((f) => f.path === view.path);
 	const prev = position > 0 ? reading[position - 1] : undefined;
 	const next = position >= 0 ? reading[position + 1] : undefined;
@@ -335,6 +402,7 @@ function Loaded({
 		v: () => file && setViewed(file, mark !== "viewed"),
 		n: () => toChange(1),
 		p: () => toChange(-1),
+		c: () => openComposer(view.path, keyLine),
 	});
 
 	useEffect(() => {
@@ -355,13 +423,31 @@ function Loaded({
 	return (
 		// The space below the code lets its last lines reach the place `n` / `p` scroll a change to.
 		<article className="min-h-full bg-background pb-[40vh]" data-path={view.path}>
-			<header className="file-head sticky top-0 z-10 flex flex-col gap-2 border-b bg-background px-4 py-2">
+			<header className="file-head @container/file sticky top-0 z-10 flex flex-col gap-2 border-b bg-background px-4 py-2">
 				<div className="flex min-w-0 items-center gap-2">
 					<div className="flex min-w-0 items-center gap-1">
 						<PathCrumbs path={view.path} onDir={dirHref} />
 						<CopyButton text={view.path} />
 					</div>
 					<div className="ml-auto flex shrink-0 items-center gap-2">
+						<Tooltip>
+							<TooltipTrigger
+								render={
+									<Button
+										variant="outline"
+										size="sm"
+										aria-keyshortcuts="c"
+										data-comment-file=""
+										className={NARROW.comment.button}
+										onClick={() => openComposer(view.path)}
+									/>
+								}
+							>
+								<MessageSquarePlusIcon aria-hidden="true" />
+								<span className={NARROW.comment.label}>{S.commentFile}</span>
+							</TooltipTrigger>
+							<Hint label={S.commentFileHint(keyLine)} keys="c" />
+						</Tooltip>
 						{file ? (
 							<Toggle
 								variant="outline"
@@ -403,10 +489,16 @@ function Loaded({
 								<ChevronRightIcon />
 							</FileStep>
 						</div>
-						<a className={buttonLook({ variant: "outline", size: "sm" })} href={mapHref()}>
-							<MapIcon data-icon="inline-start" />
-							{S.showOnMap}
-						</a>
+						<Tooltip>
+							<TooltipTrigger
+								render={<a href={mapHref()} />}
+								className={cn(buttonLook({ variant: "outline", size: "sm" }), NARROW.map.button)}
+							>
+								<MapIcon aria-hidden="true" />
+								<span className={NARROW.map.label}>{S.showOnMap}</span>
+							</TooltipTrigger>
+							<Hint label={S.showOnMap} />
+						</Tooltip>
 					</div>
 				</div>
 				<div className="flex min-h-7 flex-wrap items-center gap-2">
@@ -554,6 +646,10 @@ function Loaded({
 				</CollapsibleContent>
 			</Collapsible>
 
+			{placed.file.length > 0 || fileComposer ? (
+				<FileComments view={view} comments={placed.file} composer={fileComposer} />
+			) : null}
+
 			<div className="flex flex-col gap-3 p-4">
 				{view.status === "deleted" ? <Note icon={<FileXIcon />}>{S.deletedFile}</Note> : null}
 				{view.truncated ? (
@@ -569,6 +665,8 @@ function Loaded({
 						options={{ mode, showRemoved, wrap, plain }}
 						target={line}
 						links={links}
+						threads={placed.threads}
+						composer={lineComposer}
 					/>
 				)}
 			</div>

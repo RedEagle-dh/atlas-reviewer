@@ -265,8 +265,9 @@ function Content({ theme, setTheme }: { theme: Theme; setTheme: (theme: Theme) =
 			/>
 		);
 	// Above the model's states: the comments belong to the review and stay while a range loads.
+	// A new comment names the head this model shows; when the range has left it, the model loads again.
 	return (
-		<CommentsProvider rangeId={rangeId}>
+		<CommentsProvider rangeId={rangeId} head={head} onMoved={reloadModel}>
 			{model.status === "loading" ? (
 				<Loading />
 			) : model.status === "error" ? (

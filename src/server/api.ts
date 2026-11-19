@@ -143,7 +143,7 @@ export function createApi(session: ReviewSession) {
 		/** GET /api/comments */
 		getComments: () => guarded(async () => json(await session.comments())),
 
-		/** POST /api/comments { path, line?, endLine?, snippet?, text, range? } */
+		/** POST /api/comments { path, line?, endLine?, snippet?, text, range?, head? } */
 		addComment: (req: Request) =>
 			guarded(async () => {
 				const draft = readCommentDraft(await jsonBody(req));

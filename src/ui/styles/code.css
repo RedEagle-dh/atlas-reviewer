@@ -5,7 +5,8 @@
  * <style> element CodeView injects.
  *
  * Every row is a grid of three columns: the 4 px change bar, the line-number column, the code.
- * The number column keeps 20 px free at its left edge (a row action goes there).
+ * The number column keeps 20 px free at its left edge: there a commented line carries its mark,
+ * and there the "+" appears that comments a line.
  */
 
 .code-view {
@@ -15,6 +16,8 @@
 	font-size: 12.5px;
 	line-height: 20px;
 	tab-size: 2;
+	/* The view's own width as a unit (`cqw`): a comment is as wide as the view, not as its longest line. */
+	container-type: inline-size;
 }
 
 /*
@@ -44,6 +47,8 @@
 }
 
 .ln {
+	/* For what lies over the row's columns: the comment mark and the "+". */
+	position: relative;
 	display: grid;
 	grid-template-columns: 4px var(--gutter) minmax(0, 1fr);
 	height: 20px;
@@ -130,6 +135,131 @@ a.ln-no:hover {
 
 .ln.is-target .ln-no {
 	@apply font-bold text-foreground;
+}
+
+/*
+ * Review comments. A line that has one carries a thin bar in the free part of the number column,
+ * so a commented range shows without the pointer; the bar is not the change bar's colour and not
+ * in its place, a line can have both.
+ */
+.ln.has-comment::before,
+.ln.is-selected::before {
+	content: "";
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: 13px;
+	width: 2px;
+	@apply bg-muted-foreground;
+}
+
+/*
+ * The lines a comment is being written about, or whose card the pointer or the focus is on: the
+ * bar in full, and a tint. The tint is an image, so it lies over a change's tint instead of
+ * replacing it.
+ */
+.ln.is-selected {
+	background-image: linear-gradient(
+		color-mix(in oklab, var(--primary) 9%, transparent),
+		color-mix(in oklab, var(--primary) 9%, transparent)
+	);
+}
+
+.ln.is-selected::before {
+	left: 12px;
+	width: 4px;
+	@apply bg-primary;
+}
+
+.ln.is-selected .ln-no {
+	@apply text-foreground;
+}
+
+/*
+ * The "+" that comments a line: over the free part of the number column, as high as the row. It
+ * shows when the row is pointed at, while a selection starts on it, on the line a link points at
+ * (where `c` does the same) and when it has the focus. Without content: the plus is drawn here,
+ * so it is never part of copied code.
+ */
+.ln-add {
+	position: absolute;
+	top: 0;
+	left: 4px;
+	z-index: 1;
+	width: 20px;
+	height: 20px;
+	opacity: 0;
+	@apply cursor-pointer text-primary-foreground outline-none select-none;
+}
+
+.ln-add::before {
+	content: "";
+	position: absolute;
+	inset: 2px;
+	/* The cross of the icon set's plus, at this size: two lines, their ends too small to round. */
+	background-image:
+		linear-gradient(currentColor, currentColor), linear-gradient(currentColor, currentColor);
+	background-position: center;
+	background-size:
+		8px 1.5px,
+		1.5px 8px;
+	background-repeat: no-repeat;
+	@apply rounded-sm bg-primary;
+}
+
+.ln:hover > .ln-add,
+.ln.is-anchor > .ln-add,
+.ln.is-target > .ln-add,
+.ln-add:focus-visible {
+	opacity: 1;
+}
+
+.ln-add:hover::before {
+	@apply bg-primary/80;
+}
+
+.ln-add:active::before {
+	@apply bg-primary/65;
+}
+
+.ln-add:focus-visible::before {
+	@apply ring-2 ring-ring;
+}
+
+/* No pointer to hover with (touch): the buttons are there all the time, quietly. */
+@media (hover: none) {
+	.ln-add {
+		opacity: 0.45;
+	}
+}
+
+/* While a range is dragged, the pointer says so, over the code as well. */
+.code-view.is-selecting,
+.code-view.is-selecting .ln-add,
+.code-view.is-selecting .ln-no {
+	cursor: ns-resize;
+}
+
+/*
+ * What hangs below a line: the cards of the comments that end there, and the composer. A strip
+ * across the code in the UI's font. Its body starts where the code starts and is as wide as the
+ * view shows (up to a width that still reads well); it stays in view when the code is scrolled
+ * sideways.
+ */
+.ln-thread {
+	@apply border-y bg-muted/60 font-sans text-sm;
+	padding: 8px 16px 8px calc(var(--gutter) + 4px);
+	line-height: 1.5;
+	white-space: normal;
+}
+
+.ln-thread-body {
+	position: sticky;
+	left: calc(var(--gutter) + 4px);
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	width: min(56rem, calc(100cqw - var(--gutter) - 20px));
 }
 
 /* A fold: unchanged lines left out in "Nur Änderungen". The same columns as a row. */

@@ -216,6 +216,78 @@ export const S = {
 	folded: (n: number) => `… ${plural(n, "unveränderte Zeile", "unveränderte Zeilen")}`,
 	importLink: (target: string) => `Zu ${target}`,
 	removedLines: (n: number) => plural(n, "Zeile entfernt", "Zeilen entfernt"),
+
+	// Comments
+	comments: "Kommentare",
+	commentCount: (n: number) => plural(n, "Kommentar", "Kommentare"),
+	/** Where a comment points: a line, a range of lines, or (without a line) the whole file. */
+	place: (line?: number, endLine?: number) =>
+		line === undefined
+			? "Ganze Datei"
+			: endLine === undefined || endLine === line
+				? `Zeile ${fmt(line)}`
+				: `Zeilen ${fmt(line)}–${fmt(endLine)}`,
+	/** What a screen reader hears for a comment or its text field: `place` in a sentence. */
+	commentOn: (line?: number, endLine?: number) =>
+		line === undefined
+			? "Kommentar zur ganzen Datei"
+			: endLine === undefined || endLine === line
+				? `Kommentar zu Zeile ${fmt(line)}`
+				: `Kommentar zu den Zeilen ${fmt(line)}–${fmt(endLine)}`,
+	commentLine: (line: number) => `Zeile ${fmt(line)} kommentieren`,
+	commentFile: "Datei kommentieren",
+	/**
+	 * The tooltip of "Datei kommentieren", followed by the key `c`: the key comments the line a
+	 * link points at when there is one, and the whole file otherwise.
+	 */
+	commentFileHint: (line?: number) =>
+		line === undefined
+			? "Die ganze Datei kommentieren"
+			: `Die ganze Datei kommentieren. Zeile ${fmt(line)} kommentieren:`,
+	fileComments: "Kommentare zur Datei",
+	commentPlaceholder:
+		"Auftrag oder Frage an den Coding-Agenten, z. B. „Fehlerfall behandeln“ oder „Warum wird hier zweimal geladen?“",
+	commentSubmit: "Kommentieren",
+	commentSave: "Speichern",
+	cancel: "Abbrechen",
+	submitShortcut: (mac: boolean) => (mac ? "⌘↵" : "Strg ↵"),
+	commentEdit: "Bearbeiten",
+	commentDelete: "Löschen",
+	commentDeleted: "Kommentar gelöscht",
+	undo: "Rückgängig",
+	commentNotSaved: (message: string) => `Nicht gespeichert: ${message}`,
+	commentNotDeleted: (message: string) => `Nicht gelöscht: ${message}`,
+	commentNotRestored: (message: string) => `Nicht wiederhergestellt: ${message}`,
+	commentMoved:
+		"Nicht gespeichert: der Code hat sich geändert (neue Commits). Stelle prüfen und erneut senden.",
+	/** Esc is pressed in a field that holds text: why nothing happened. */
+	escKeepsText: "Esc schließt nur ein leeres Feld. „Abbrechen“ verwirft den Text.",
+	escKeepsEdit: "Esc schließt nur ohne Änderung. „Abbrechen“ verwirft sie.",
+	commentOutdated: "Code seitdem geändert",
+	commentOutdatedHint:
+		"Die Zeilen lauten nicht mehr wie beim Kommentieren. Der Prompt zitiert sie so, wie sie damals waren.",
+	commentGoneHint:
+		"Diese Zeilen gibt es in der Datei nicht mehr. Der Prompt zitiert sie so, wie sie damals waren.",
+	commentsOpen: (n: number) =>
+		n === 0 ? "Kommentare öffnen" : `Kommentare öffnen (${plural(n, "Kommentar", "Kommentare")})`,
+	commentsHint: "Sammlung für den Coding-Agenten: als Prompt kopieren und ihm geben.",
+	tabList: "Liste",
+	tabPrompt: "Prompt",
+	promptLabel: "Prompt für den Coding-Agenten",
+	copyPrompt: "Als Prompt kopieren",
+	promptCopied: (n: number) => `Prompt mit ${plural(n, "Kommentar", "Kommentaren")} kopiert`,
+	copyByHand: (mac: boolean) =>
+		`Der Browser gibt die Zwischenablage nicht frei. Der Prompt ist markiert: mit ${mac ? "⌘C" : "Strg+C"} kopieren.`,
+	clearComments: "Alle löschen",
+	clearTitle: (n: number) =>
+		n === 1 ? "Den Kommentar löschen?" : `Alle ${fmt(n)} Kommentare löschen?`,
+	clearHint: "Das lässt sich nicht rückgängig machen.",
+	noComments: "Noch keine Kommentare",
+	noCommentsHint:
+		"Im Code auf das + neben einer Zeilennummer klicken; für die ganze Datei „Datei kommentieren“ über dem Code wählen oder c drücken. Ein Kommentar ist ein Auftrag oder eine Frage an den Coding-Agenten.",
+	commentsNotLoaded: "Die Kommentare wurden nicht geladen.",
+	commentUnsaved: "Ein Kommentar ist noch in Arbeit: erst speichern oder abbrechen.",
+	close: "Schließen",
 } as const;
 
 /** The label of a category id: the review's own label, else the word for a built-in id, else the id. */
