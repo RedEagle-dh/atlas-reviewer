@@ -4,6 +4,20 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>review-atlas</title>
+		<script>
+			// The theme before the first paint (the choice of `useTheme()`, state/prefs.ts).
+			(() => {
+				try {
+					const theme = localStorage.getItem("review-atlas:theme");
+					const dark =
+						theme === "dark" ||
+						(theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+					document.documentElement.classList.toggle("dark", dark);
+				} catch {
+					// No storage (a private window): light until the app has loaded.
+				}
+			})();
+		</script>
 	</head>
 	<body>
 		<div id="root"></div>

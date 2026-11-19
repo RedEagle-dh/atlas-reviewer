@@ -3,6 +3,7 @@
  * review-atlas serve <review-file> [--port 4610] [--host 127.0.0.1] [--range <id>] [--open] [--dev]
  * review-atlas check <review-file> [--range <id>] [--cold]
  */
+import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { RangeBuild } from "../src/core/build";
 import { loadReview, REST_CHAPTER_ID, type Review } from "../src/core/define";
@@ -22,10 +23,35 @@ const USAGE = `usage:
           unresolved (except those the review lists in expectedUnresolved)
   --cold  check: ignore the extraction cache on the first build (the second build reads it)`;
 
+/** The tool's directory: its `bunfig.toml` registers the Tailwind plugin of the UI bundle. */
+const TOOL_DIR = resolve(import.meta.dir, "..");
+const RESTARTED = "REVIEW_ATLAS_RESTARTED";
+
+/**
+ * Bun reads `bunfig.toml` from the working directory when the process starts, and without it
+ * the page is served unstyled. So `serve`, started from elsewhere, runs itself again from the
+ * tool's directory (the review file made absolute first).
+ */
+async function serveFromToolDir(argv: string[], fileAt: number): Promise<number> {
+	const args = argv.map((arg, i) => (i === fileAt ? resolve(arg) : arg));
+	const child = Bun.spawn([process.execPath, import.meta.path, ...args], {
+		cwd: TOOL_DIR,
+		env: { ...process.env, [RESTARTED]: "1" },
+		stdin: "inherit",
+		stdout: "inherit",
+		stderr: "inherit",
+	});
+	// A terminal's Ctrl-C reaches the child by itself; a signal sent to this process alone is passed on.
+	process.on("SIGINT", () => undefined);
+	process.on("SIGTERM", () => child.kill("SIGTERM"));
+	return child.exited;
+}
+
 async function main(argv: string[]): Promise<number> {
-	const { values, positionals } = parseArgs({
+	const { values, positionals, tokens } = parseArgs({
 		args: argv,
 		allowPositionals: true,
+		tokens: true,
 		options: {
 			port: { type: "string" },
 			host: { type: "string" },
@@ -40,6 +66,10 @@ async function main(argv: string[]): Promise<number> {
 	if (values.help || !command || !file || (command !== "serve" && command !== "check")) {
 		console.log(USAGE);
 		return values.help ? 0 : 2;
+	}
+	if (command === "serve" && !process.env[RESTARTED] && resolve(process.cwd()) !== TOOL_DIR) {
+		const fileAt = tokens.filter((t) => t.kind === "positional")[1]?.index;
+		if (fileAt !== undefined) return serveFromToolDir(argv, fileAt);
 	}
 	const review = await loadReview(file);
 	if (values.range !== undefined && !review.ranges.some((r) => r.id === values.range)) {

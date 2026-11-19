@@ -3,6 +3,8 @@
  * and renders the shell (top bar, sidebar, search) around the view the hash route names.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import type { ReviewMeta, ReviewModel } from "../core/types";
 import { getModel, getReview } from "./api";
 import { SearchPalette } from "./components/SearchPalette";
@@ -12,7 +14,7 @@ import { TopBar } from "./components/TopBar";
 import { shortSha } from "./lib/files";
 import { mapRoute, type Route, readFileParams, withRange } from "./router";
 import { AtlasContext, useAtlasValue, useViewedState } from "./state/atlas";
-import { useCategories, useFlag, useTheme } from "./state/prefs";
+import { type Theme, useCategories, useFlag, useTheme } from "./state/prefs";
 import { useResource } from "./state/resource";
 import { hrefOf, navigate, useRoute, useScrollMemory } from "./state/route";
 import { S, withWords } from "./strings";
@@ -45,6 +47,8 @@ function Shell({
 	reloadModel,
 	moved,
 	onDismissMoved,
+	theme,
+	setTheme,
 }: {
 	meta: ReviewMeta;
 	model: ReviewModel;
@@ -54,6 +58,8 @@ function Shell({
 	/** The heads before and after the model was reloaded because the range moved on. */
 	moved: { from: string; to: string } | null;
 	onDismissMoved: () => void;
+	theme: Theme;
+	setTheme: (theme: Theme) => void;
 }) {
 	const meta = useMemo(() => withWords(rawMeta), [rawMeta]);
 	const [categories, toggleCategory] = useCategories(
@@ -75,7 +81,6 @@ function Shell({
 	});
 	const [sidebarOpen, setSidebarOpen] = useFlag("sidebar", true);
 	const [searching, setSearching] = useState(false);
-	const [theme, setTheme] = useTheme();
 	const main = useRef<HTMLElement>(null);
 	useScrollMemory(main);
 
@@ -130,7 +135,18 @@ function Shell({
 	);
 }
 
+/** The root: the theme (once, for every state of the page), tooltips and toasts around it all. */
 export function App() {
+	const [theme, setTheme, resolved] = useTheme();
+	return (
+		<TooltipProvider delay={300}>
+			<Content theme={theme} setTheme={setTheme} />
+			<Toaster theme={resolved} position="bottom-center" />
+		</TooltipProvider>
+	);
+}
+
+function Content({ theme, setTheme }: { theme: Theme; setTheme: (theme: Theme) => void }) {
 	const route = useRoute();
 	const meta = useResource("meta", (signal) => getReview({ signal }), metas);
 	const rangeId =
@@ -185,6 +201,8 @@ export function App() {
 			reloadModel={reloadModel}
 			moved={moved}
 			onDismissMoved={dismissMoved}
+			theme={theme}
+			setTheme={setTheme}
 		/>
 	);
 }

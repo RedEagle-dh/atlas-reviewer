@@ -1,6 +1,6 @@
 /**
  * The three layers: `core` imports neither `server` nor `ui`; `ui` takes only TYPES from `core`
- * and nothing from `server`, and of the packages only the four the browser needs, so nothing of
+ * and nothing from `server`, and of the packages only those the browser needs, so nothing of
  * git, the filesystem, shiki or the TypeScript compiler reaches the browser bundle. Checked with
  * the tool's own extractor.
  */
@@ -12,8 +12,25 @@ import { splitPackageSpecifier } from "./core/imports/resolve";
 
 const SRC = import.meta.dir;
 
-/** The packages the UI may import (its runtime dependencies in the browser). */
-const UI_PACKAGES = new Set(["react", "react-dom", "@xyflow/react", "@dagrejs/dagre"]);
+/**
+ * The packages the UI may import (its runtime dependencies in the browser): React, the map
+ * (React Flow, dagre) and what the shadcn/ui components in `ui/components/ui` are made of.
+ */
+const UI_PACKAGES = new Set([
+	"react",
+	"react-dom",
+	"@xyflow/react",
+	"@dagrejs/dagre",
+	"@base-ui/react",
+	"class-variance-authority",
+	"cmdk",
+	"cn",
+	"lucide-react",
+	"sonner",
+]);
+
+/** `@/…` is the UI's own root (`paths` in tsconfig.json, `aliases` in components.json). */
+const UI_ALIAS = "@/";
 
 async function sources(dir: string): Promise<string[]> {
 	const entries = await readdir(join(SRC, dir), { recursive: true });
@@ -36,6 +53,7 @@ async function importsOf(file: string): Promise<Found[]> {
 	const code = await Bun.file(join(SRC, file)).text();
 	return typescriptExtractor.extract(file, code).map((i) => {
 		const common = { kind: i.kind, line: i.line, specifier: i.specifier };
+		if (i.specifier.startsWith(UI_ALIAS)) return { ...common, layer: "ui", package: null };
 		if (i.specifier.startsWith(".")) {
 			const target = relative(SRC, resolve(SRC, dirname(file), i.specifier));
 			return { ...common, layer: target.split("/")[0] ?? "", package: null };
@@ -65,7 +83,7 @@ describe("layers", () => {
 		expect(offending).toEqual([]);
 	});
 
-	test("ui imports no builtin and no package but the browser's four (types excepted)", async () => {
+	test("ui imports no builtin and no package but the browser's (types excepted)", async () => {
 		const offending: string[] = [];
 		for (const file of await sources("ui"))
 			for (const i of await importsOf(file))

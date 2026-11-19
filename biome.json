@@ -4,6 +4,9 @@
 	"files": {
 		"includes": ["**", "!**/node_modules", "!**/.review-atlas", "!**/dist"]
 	},
+	"css": {
+		"parser": { "tailwindDirectives": true }
+	},
 	"formatter": {
 		"enabled": true,
 		"indentStyle": "tab",
@@ -15,6 +18,12 @@
 			"preset": "recommended"
 		}
 	},
+	"overrides": [
+		{
+			"includes": ["src/ui/components/ui/**", "src/ui/hooks/use-mobile.ts"],
+			"linter": { "enabled": false }
+		}
+	],
 	"assist": {
 		"actions": {
 			"source": {

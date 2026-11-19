@@ -11,6 +11,9 @@ function typingInto(target: EventTarget | null): boolean {
 	);
 }
 
+/** An open dialog, sheet or command palette (Base UI popups): the page behind takes no keys. */
+const MODAL_OPEN = '[role="dialog"], [role="alertdialog"], [data-modal-open]';
+
 /**
  * Calls `bindings[event.key]` on a plain key press (no Ctrl, Alt or Meta) outside text fields.
  * The latest bindings are always used, so callers may pass a new object on every render.
@@ -23,7 +26,7 @@ export function useKeys(bindings: Readonly<Record<string, () => void>>, enabled 
 		const onKey = (event: KeyboardEvent) => {
 			if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
 			if (typingInto(event.target)) return;
-			if (document.querySelector("[data-modal-open]")) return;
+			if (document.querySelector(MODAL_OPEN)) return;
 			const action = latest.current[event.key];
 			if (!action) return;
 			event.preventDefault();
