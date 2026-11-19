@@ -41,9 +41,10 @@ const P = {
 			? "When you are done, summarise what you changed or answered."
 			: "When you are done, summarise per comment what you changed or answered.",
 	wholeFile: "whole file",
-	deletedFile: (base: string) => `deleted file — its last version is at commit ${sha7(base)}`,
-	deletedLines: (base: string) =>
-		`deleted file — line numbers of its last version, at commit ${sha7(base)}`,
+	// The base of the range, which is the version the review shows: the file may have changed
+	// again before it was deleted, so this is not called its last version.
+	deletedFile: (base: string) => `deleted file — commented as of commit ${sha7(base)}`,
+	deletedLines: (base: string) => `deleted file — line numbers as of commit ${sha7(base)}`,
 	atCommit: (head: string) => `at commit ${sha7(head)}`,
 	firstLines: (quoted: number, all: number) => `(first ${quoted} of ${all} lines)`,
 };

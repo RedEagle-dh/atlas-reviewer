@@ -155,8 +155,12 @@ export function SiteHeader({
 					>
 						{meta.title}
 					</h1>
-					{/* And which range, with the way to another: both are in the sidebar otherwise. */}
-					<div className="hidden min-w-0 @3xl/header:flex">
+					{/*
+					 * And which range, with the way to another: both are in the sidebar otherwise. From the
+					 * width on at which the sidebar is a column that can be closed (48rem of window, less
+					 * the bar's own padding); below it the sidebar is a sheet, which holds the switch.
+					 */}
+					<div className="hidden min-w-0 @[46.5rem]/header:flex">
 						<RangeSwitch place="header" />
 					</div>
 				</>
