@@ -13,16 +13,39 @@ export interface StateStore {
 }
 
 export function createStateStore(file: string): StateStore {
-	let state: ViewedState | undefined;
-	// Writes run one after the other, so two quick toggles cannot interleave.
+	/**
+	 * The file holds the marks: nothing of them is kept in memory. Every request reads it first,
+	 * so a second server of the same review (on another port) sees what this one wrote instead of
+	 * writing its older marks over it. Requests of this server run one after the other: two quick
+	 * toggles cannot interleave, and a read never brings back what a write has just replaced.
+	 * (Between two servers nothing locks the file: see `createCommentStore`.)
+	 */
 	let queue: Promise<unknown> = Promise.resolve();
+	const inTurn = <T>(task: () => Promise<T>): Promise<T> => {
+		const run = queue.then(task);
+		queue = run.catch(() => undefined);
+		return run;
+	};
 
-	const load = async (): Promise<ViewedState> => {
-		if (state) return state;
+	/**
+	 * The marks on disk. No file, or one whose text is no JSON or holds no `viewed`, means nothing
+	 * viewed. A file that cannot be read (no permission, a directory in its place) rejects with the
+	 * error of the read: "nothing viewed" would let the next `set` write its one mark over all the
+	 * marks the file holds.
+	 */
+	const read = async (): Promise<ViewedState> => {
 		// No prototype: a path such as `__proto__` is an ordinary key here.
 		const viewed: Record<string, string> = Object.create(null);
+		let text: string;
 		try {
-			const data: unknown = JSON.parse(await Bun.file(file).text());
+			text = await Bun.file(file).text();
+		} catch (error) {
+			// No state yet, or the file is gone since: nothing viewed.
+			if (error instanceof Error && "code" in error && error.code === "ENOENT") return { viewed };
+			throw error;
+		}
+		try {
+			const data: unknown = JSON.parse(text);
 			if (typeof data === "object" && data !== null && "viewed" in data) {
 				const marks = data.viewed;
 				if (typeof marks === "object" && marks !== null)
@@ -30,20 +53,18 @@ export function createStateStore(file: string): StateStore {
 						if (typeof blob === "string") viewed[path] = blob;
 			}
 		} catch {
-			// No state yet (or unreadable): nothing viewed.
+			// Not JSON: nothing viewed.
 		}
-		state = { viewed };
-		return state;
+		return { viewed };
 	};
 
 	return {
-		async read() {
-			const current = await load();
-			return { viewed: { ...current.viewed } };
+		read() {
+			return inTurn(async () => ({ viewed: { ...(await read()).viewed } }));
 		},
 		set(path, blob) {
-			const run = queue.then(async () => {
-				const current = await load();
+			return inTurn(async () => {
+				const current = await read();
 				if (blob === null) delete current.viewed[path];
 				else current.viewed[path] = blob;
 				await mkdir(dirname(file), { recursive: true });
@@ -52,8 +73,6 @@ export function createStateStore(file: string): StateStore {
 				await rename(tmp, file);
 				return { viewed: { ...current.viewed } };
 			});
-			queue = run.catch(() => undefined);
-			return run;
 		},
 	};
 }

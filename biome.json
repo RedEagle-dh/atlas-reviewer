@@ -2,7 +2,10 @@
 	"$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
 	"vcs": { "enabled": false },
 	"files": {
-		"includes": ["**", "!**/node_modules", "!**/.review-atlas", "!**/dist"]
+		"includes": ["**", "!**/node_modules", "!**/.review-atlas", "!**/.claude", "!**/dist"]
+	},
+	"css": {
+		"parser": { "tailwindDirectives": true }
 	},
 	"formatter": {
 		"enabled": true,
@@ -15,6 +18,12 @@
 			"preset": "recommended"
 		}
 	},
+	"overrides": [
+		{
+			"includes": ["src/ui/components/ui/**", "src/ui/hooks/use-mobile.ts"],
+			"linter": { "enabled": false }
+		}
+	],
 	"assist": {
 		"actions": {
 			"source": {

@@ -4,7 +4,7 @@
 import type { Review } from "../core/define";
 import { ReviewSession, type SessionOptions } from "../core/session";
 import ui from "../ui/index.html";
-import { createApi } from "./api";
+import { createApi, MAX_BODY } from "./api";
 
 export interface ServerOptions extends SessionOptions {
 	/** Default 4610; 0 picks a free port. */
@@ -34,14 +34,24 @@ export function startServer(review: Review, options: ServerOptions = {}): Runnin
 		hostname: options.host ?? DEFAULT_HOST,
 		port: options.port ?? DEFAULT_PORT,
 		development: options.development ?? false,
-		// The only body the API takes is a small `PUT /api/state`.
-		maxRequestBodySize: 64 * 1024,
+		// One server per port. Outside development mode Bun would let a second process listen on a
+		// port that is taken, and the two would answer in turns, each with its own copy of the
+		// viewed marks and the comments: what one writes, the other overwrites.
+		reusePort: false,
+		// The bodies the API takes are small: a viewed mark, a comment.
+		maxRequestBodySize: MAX_BODY,
 		routes: {
 			"/": ui,
 			"/api/review": { GET: api.review },
 			"/api/model": { GET: api.model },
 			"/api/file": { GET: api.file },
 			"/api/state": { GET: api.getState, PUT: api.putState },
+			"/api/comments": {
+				GET: api.getComments,
+				POST: api.addComment,
+				DELETE: api.clearComments,
+			},
+			"/api/comments/:id": { PUT: api.editComment, DELETE: api.removeComment },
 			"/api/*": api.notFound,
 		},
 		fetch() {

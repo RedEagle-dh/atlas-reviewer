@@ -1,20 +1,34 @@
-/* The code view: gutter, line numbers, tints, removed lines, folds, import links. */
+/*
+ * The rows of the code view. A sheet and not utilities, because a file has thousands of rows and
+ * each stays a few plain elements with one class. Surfaces and marks are theme tokens; the colours
+ * of the code itself (the plain text and every token) come from the file's palette, in the
+ * <style> element CodeView injects.
+ *
+ * Every row is a grid of three columns: the 4 px change bar, the line-number column, the code.
+ * The number column keeps 20 px free at its left edge: there a commented line carries its mark,
+ * and there the "+" appears that comments a line.
+ */
 
 .code-view {
 	--digits: 3;
-	margin: 12px 18px 0;
-	padding: 6px 0;
-	border: 1px solid var(--rule);
-	border-radius: var(--radius-m);
-	background: var(--surface);
-	color: light-dark(#24292e, #e1e4e8);
-	font-family: var(--font-code);
-	font-size: var(--code-size);
-	line-height: var(--code-line);
+	--gutter: calc(var(--digits) * 1ch + 2rem);
+	@apply overflow-x-auto rounded-lg border bg-card py-1.5 font-mono text-card-foreground;
+	font-size: 12.5px;
+	line-height: 20px;
 	tab-size: 2;
-	overflow-x: auto;
+	/* The view's own width as a unit (`cqw`): a comment is as wide as the view, not as its longest line. */
+	container-type: inline-size;
 }
 
+/*
+ * A box that scrolls sideways is a Tab stop of its own (always in Firefox; in Chrome when nothing
+ * inside takes the focus), so the arrow keys can scroll it: it shows the ring a control shows.
+ */
+.code-view:focus-visible {
+	@apply border-ring ring-3 ring-ring/50 outline-none;
+}
+
+/* Rows off screen are not rendered; CodeView reserves each chunk's height (an estimate where comment cards hang). */
 .code-chunk {
 	content-visibility: auto;
 	min-width: max-content;
@@ -24,36 +38,37 @@
 	min-width: 0;
 }
 
+/* What is scrolled or focused into view (a search hit, Tab) lands below the sticky header. */
+.code-view,
+.ln,
+.ln-fold,
+.imp-link {
+	scroll-margin-block: 8rem 2rem;
+}
+
 .ln {
+	/* For what lies over the row's columns: the comment mark and the "+". */
+	position: relative;
 	display: grid;
-	grid-template-columns: 4px calc(var(--digits) * 1ch + 22px) minmax(0, 1fr);
-	height: var(--code-line);
-	scroll-margin-top: 110px;
+	grid-template-columns: 4px var(--gutter) minmax(0, 1fr);
+	height: 20px;
 }
 
 .code-view.is-wrap .ln {
 	height: auto;
-	min-height: var(--code-line);
-}
-
-.ln-mark {
-	align-self: stretch;
+	min-height: 20px;
 }
 
 .ln-no {
-	padding-right: 14px;
-	color: var(--ink-3);
-	text-align: right;
-	user-select: none;
-	font-size: 0.92em;
+	@apply pr-3 text-right text-muted-foreground tabular-nums select-none;
 }
 
 a.ln-no:hover {
-	color: var(--accent);
+	@apply text-foreground underline underline-offset-2;
 }
 
 .ln-code {
-	padding-right: 24px;
+	@apply pr-6;
 	white-space: pre;
 }
 
@@ -62,117 +77,254 @@ a.ln-no:hover {
 	overflow-wrap: anywhere;
 }
 
-/* Change marks: the gutter bar carries the meaning, the tint makes the stretch easy to find */
-.ln.ch-modified {
-	background: var(--tint-modified);
-}
-
-.ln.ch-modified .ln-mark {
-	background: var(--modified);
-}
-
+/* Change marks: the bar in the gutter carries the meaning, the tint makes the stretch easy to find. */
 .ln.ch-added {
-	background: var(--tint-added);
+	@apply bg-added/10;
 }
 
 .ln.ch-added .ln-mark {
-	background: var(--added);
+	@apply bg-added;
 }
 
-.ln.is-removed {
-	background: var(--tint-removed);
+.ln.ch-modified {
+	@apply bg-modified/10;
 }
 
-.ln.is-removed .ln-mark {
-	background: var(--deleted);
+.ln.ch-modified .ln-mark {
+	@apply bg-modified;
+}
+
+/* On a tint the muted grey gets too faint to read: the numbers of changed lines are darker. */
+.ln.ch-added .ln-no,
+.ln.ch-modified .ln-no {
+	@apply text-foreground/70;
+}
+
+.ln.is-removed,
+.ln.is-marker {
+	@apply bg-deleted/10;
+}
+
+.ln.is-removed .ln-mark,
+.ln.is-marker .ln-mark {
+	@apply bg-deleted;
 }
 
 .ln.is-removed .ln-no {
-	color: var(--deleted);
+	@apply text-deleted;
 }
 
+/* Dimmed only a little: a reviewer reads what was there, grey comments included. */
 .ln.is-removed .ln-code {
-	opacity: 0.85;
+	opacity: 0.9;
 }
 
-.ln.is-marker {
-	background: var(--tint-removed);
-	color: var(--deleted);
-	font-family: var(--font-ui);
-	font-size: var(--fs-s);
+/* "3 Zeilen entfernt": words, not code. The row keeps the code's font, so its columns line up. */
+.ln.is-marker .ln-code {
+	@apply font-sans text-xs leading-5 text-deleted;
 }
 
-.ln.is-marker .ln-mark {
-	background: var(--deleted);
-}
-
+/*
+ * The line a link points at (`?line=`). After the change marks: it wins over their tint. The frame
+ * is the theme's ring colour as it is. Of two colours with an opacity in one rule the build keeps
+ * only the first one's (here the tint's): a second, as in `ring-primary/40`, comes out solid.
+ */
 .ln.is-target {
-	background: var(--tint-target);
-	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+	@apply bg-primary/12 ring-1 ring-ring ring-inset;
 }
 
 .ln.is-target .ln-no {
-	color: var(--accent);
-	font-weight: 700;
+	@apply font-bold text-foreground;
 }
 
+/*
+ * Review comments. A line that has one carries a thin bar in the free part of the number column,
+ * so a commented range shows without the pointer; the bar is not the change bar's colour and not
+ * in its place, a line can have both.
+ */
+.ln.has-comment::before,
+.ln.is-selected::before {
+	content: "";
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: 13px;
+	width: 2px;
+	@apply bg-muted-foreground;
+}
+
+/*
+ * The lines a comment is being written about, or whose card the pointer or the focus is on: the
+ * bar in full, and a tint. The tint is an image, so it lies over a change's tint instead of
+ * replacing it.
+ */
+.ln.is-selected {
+	background-image: linear-gradient(
+		color-mix(in oklab, var(--primary) 9%, transparent),
+		color-mix(in oklab, var(--primary) 9%, transparent)
+	);
+}
+
+.ln.is-selected::before {
+	left: 12px;
+	width: 4px;
+	@apply bg-primary;
+}
+
+.ln.is-selected .ln-no {
+	@apply text-foreground;
+}
+
+/*
+ * The "+" that comments a line: over the free part of the number column, as high as the row. It
+ * shows when the row is pointed at, while a selection starts on it, on the line a link points at
+ * (where `c` does the same) and when it has the focus. Without content: the plus is drawn here,
+ * so it is never part of copied code.
+ */
+.ln-add {
+	position: absolute;
+	top: 0;
+	left: 4px;
+	z-index: 1;
+	width: 20px;
+	height: 20px;
+	opacity: 0;
+	@apply cursor-pointer text-primary-foreground outline-none select-none;
+}
+
+.ln-add::before {
+	content: "";
+	position: absolute;
+	inset: 2px;
+	/* The cross of the icon set's plus, at this size: two lines, their ends too small to round. */
+	background-image:
+		linear-gradient(currentColor, currentColor), linear-gradient(currentColor, currentColor);
+	background-position: center;
+	background-size:
+		8px 1.5px,
+		1.5px 8px;
+	background-repeat: no-repeat;
+	@apply rounded-sm bg-primary;
+}
+
+.ln:hover > .ln-add,
+.ln.is-anchor > .ln-add,
+.ln.is-target > .ln-add,
+.ln-add:focus-visible {
+	opacity: 1;
+}
+
+.ln-add:hover::before {
+	@apply bg-primary/80;
+}
+
+.ln-add:active::before {
+	@apply bg-primary/65;
+}
+
+.ln-add:focus-visible::before {
+	@apply ring-2 ring-ring;
+}
+
+/* No pointer to hover with (touch): the buttons are there all the time, quietly. */
+@media (hover: none) {
+	.ln-add {
+		opacity: 0.45;
+	}
+}
+
+/* While a range is dragged, the pointer says so, over the code as well. */
+.code-view.is-selecting,
+.code-view.is-selecting .ln-add,
+.code-view.is-selecting .ln-no {
+	cursor: ns-resize;
+}
+
+/*
+ * What hangs below a line: the cards of the comments that end there, and the composer. A strip
+ * across the code in the UI's font. Its body starts where the code starts and is as wide as the
+ * view shows (up to a width that still reads well); it stays in view when the code is scrolled
+ * sideways.
+ */
+.ln-thread {
+	@apply border-y bg-muted/60 font-sans text-sm;
+	padding: 8px 16px 8px calc(var(--gutter) + 4px);
+	line-height: 1.5;
+	white-space: normal;
+}
+
+.ln-thread-body {
+	position: sticky;
+	left: calc(var(--gutter) + 4px);
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	width: min(56rem, calc(100cqw - var(--gutter) - 20px));
+}
+
+/* A fold: unchanged lines left out in "Nur Änderungen". The same columns as a row. */
 .ln-fold {
-	display: block;
+	display: grid;
+	grid-template-columns: 4px var(--gutter) minmax(0, 1fr);
+	align-items: center;
 	width: 100%;
 	height: 26px;
-	padding: 0 0 0 calc(var(--digits) * 1ch + 26px);
-	border: 0;
-	border-top: 1px dashed var(--rule);
-	border-bottom: 1px dashed var(--rule);
-	background: var(--surface-2);
-	color: var(--ink-2);
-	font-family: var(--font-ui);
-	font-size: var(--fs-s);
-	text-align: left;
-	cursor: pointer;
+	@apply cursor-pointer border-y border-dashed bg-muted/50 text-left text-muted-foreground outline-none;
 }
 
-.ln-fold:hover {
-	background: var(--sunken);
-	color: var(--accent);
+.ln-fold:hover,
+.ln-fold:focus-visible {
+	@apply bg-accent text-accent-foreground;
 }
 
+.ln-fold:focus-visible {
+	@apply ring-2 ring-ring ring-inset;
+}
+
+.ln-fold-icon {
+	@apply mr-3 size-3.5 justify-self-end;
+	grid-column: 2;
+}
+
+.ln-fold-text {
+	@apply font-sans text-xs;
+	grid-column: 3;
+}
+
+/*
+ * The file an import line leads to, as a chip after the line. Not selectable: a copied line is the
+ * code, without the chip's file name stuck to its end.
+ */
 .imp-link {
-	display: inline-flex;
-	align-items: center;
-	gap: 3px;
-	margin-left: 14px;
-	padding: 0 6px;
-	border-radius: var(--radius-s);
-	background: var(--sunken);
-	color: var(--ink-2);
-	font-family: var(--font-ui);
-	font-size: var(--fs-xs);
-	line-height: 16px;
-	vertical-align: 1px;
-	white-space: nowrap;
+	@apply ml-3 inline-flex items-center gap-1 rounded-sm bg-muted px-1.5 align-middle font-sans text-xs leading-4 whitespace-nowrap text-muted-foreground outline-none select-none;
 }
 
-.imp-link .icon-svg {
-	width: 11px;
-	height: 11px;
+.imp-link:hover,
+.imp-link:focus-visible {
+	@apply bg-accent text-accent-foreground;
 }
 
-.imp-link:hover {
-	background: var(--accent-soft);
-	color: var(--accent);
+.imp-link:focus-visible {
+	@apply ring-2 ring-ring;
 }
 
-/* Token styles from the highlighter (colours are per file, in the view's own sheet) */
-.fi {
+.imp-link svg {
+	@apply size-3;
+}
+
+/* Token styles from the highlighter (their colours are per file, in the view's own sheet). */
+.code-view .fi {
 	font-style: italic;
 }
-.fb {
+
+.code-view .fb {
 	font-weight: 700;
 }
-.fu {
+
+.code-view .fu {
 	text-decoration: underline;
 }
-.fs {
+
+.code-view .fs {
 	text-decoration: line-through;
 }

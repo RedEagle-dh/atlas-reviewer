@@ -1,10 +1,19 @@
 /**
  * One review, served: builds models on demand and keeps them while the refs stay put, keeps the
- * repository analysis per head commit, and answers the four questions of the contract.
+ * repository analysis per head commit, and answers the questions of the contract (the review, a
+ * model, a file, the viewed marks, the comments).
  */
 import { resolve } from "node:path";
-import { buildRange, findRange, type RangeBuild, resolveRange, UnknownRangeError } from "./build";
+import {
+	buildRange,
+	findRange,
+	type RangeBuild,
+	resolveRange,
+	sourceOf,
+	UnknownRangeError,
+} from "./build";
 import { createClassifier } from "./classify";
+import { type CommentStore, createCommentStore } from "./comments";
 import { REST_CHAPTER_ID, type Review } from "./define";
 import { buildFileView, type Content, LruCache } from "./file-view";
 import { createShikiHighlighter, type Highlighter } from "./highlight";
@@ -13,13 +22,22 @@ import type { Extractor } from "./imports/extract";
 import type { ResolverFactory } from "./imports/resolve";
 import type { RepoSource } from "./source";
 import { createStateStore, type StateStore } from "./state";
-import type { FileView, ReviewMeta, ReviewModel, ViewedState, ViewedUpdate } from "./types";
+import type {
+	CommentDraft,
+	CommentEdit,
+	CommentsState,
+	FileView,
+	ReviewMeta,
+	ReviewModel,
+	ViewedState,
+	ViewedUpdate,
+} from "./types";
 
-/** `<tool>/.review-atlas`: state files and the extraction cache. */
+/** `<tool>/.review-atlas`: the viewed marks, the comments and the extraction cache. */
 export const DEFAULT_DATA_DIR = resolve(import.meta.dir, "../../.review-atlas");
 
 export interface SessionOptions {
-	/** Where state and cache live; default `DEFAULT_DATA_DIR`. */
+	/** Where marks, comments and cache live; default `DEFAULT_DATA_DIR`. */
 	dataDir?: string;
 	highlighter?: Highlighter;
 	extractors?: readonly Extractor[];
@@ -35,6 +53,7 @@ export class ReviewSession {
 	private readonly analyses = new Map<string, Promise<RepoImports>>();
 	private readonly contents = new LruCache<Content>(300);
 	private readonly state: StateStore;
+	private readonly commentStore: CommentStore;
 	private importCache: Promise<ImportCache | null> | undefined;
 
 	constructor(
@@ -44,6 +63,7 @@ export class ReviewSession {
 		this.dataDir = options.dataDir ?? DEFAULT_DATA_DIR;
 		this.highlighter = options.highlighter ?? createShikiHighlighter();
 		this.state = createStateStore(resolve(this.dataDir, "state", `${review.id}.json`));
+		this.commentStore = createCommentStore(resolve(this.dataDir, "comments", `${review.id}.json`));
 		if (options.importCache !== undefined) this.importCache = Promise.resolve(options.importCache);
 	}
 
@@ -136,13 +156,59 @@ export class ReviewSession {
 	async setViewed(update: ViewedUpdate): Promise<ViewedState | null> {
 		if (!update.viewed) return this.state.set(update.path, null);
 		const build = await this.build(update.range);
-		const entry = build.diff.get(update.path);
-		const blob =
-			entry?.status === "deleted" ? build.base.blob(update.path) : build.head.blob(update.path);
+		const blob = sourceOf(build, update.path)?.blob(update.path);
 		if (!blob) return null;
 		if (update.blob !== undefined && update.blob !== blob)
 			throw new RangeMovedError(build.resolved.range.id, null, build.resolved.headSha);
 		return this.state.set(update.path, blob);
+	}
+
+	comments(): Promise<CommentsState> {
+		return this.commentStore.list();
+	}
+
+	/**
+	 * Records a comment in a range, at the range's head of this moment: the commit its line
+	 * numbers belong to (for a file the range deletes: its base, recorded too). With `draft.head`
+	 * and `draft.base` (the commits the writer's page shows) a range that has moved on throws
+	 * `RangeMovedError` and nothing is written: the line numbers were read off another commit.
+	 * `null` when the path is no file of the range (see `sourceOf`); a draft that breaks a rule
+	 * rejects with `InvalidCommentError`. The new comment is the last entry.
+	 */
+	async addComment(draft: CommentDraft): Promise<CommentsState | null> {
+		const build = await this.build(draft.range);
+		const { range: _asked, head: shownHead, base: shownBase, ...content } = draft;
+		const { baseSha, headSha } = build.resolved;
+		// Before the path: in the new state the file may be gone, and "not found" would hide why.
+		if (
+			(shownHead !== undefined && shownHead !== headSha) ||
+			(shownBase !== undefined && shownBase !== baseSha)
+		)
+			throw new RangeMovedError(build.resolved.range.id, shownHead ?? null, headSha);
+		if (!sourceOf(build, draft.path)) return null;
+		// A deleted file is read from the base: the comment says so, with the commit.
+		const deleted = build.diff.get(draft.path)?.status === "deleted";
+		return this.commentStore.add({
+			...content,
+			range: build.resolved.range.id,
+			head: headSha,
+			...(deleted ? { base: baseSha } : {}),
+		});
+	}
+
+	/** `null` for an unknown id. */
+	editComment(id: string, edit: CommentEdit): Promise<CommentsState | null> {
+		return this.commentStore.edit(id, edit.text);
+	}
+
+	/** An unknown id is not an error: the comment is gone either way. */
+	removeComment(id: string): Promise<CommentsState> {
+		return this.commentStore.remove(id);
+	}
+
+	/** The reader starts over, after handing the comments to the agent. */
+	clearComments(): Promise<CommentsState> {
+		return this.commentStore.clear();
 	}
 
 	private analyze(commit: RepoSource): Promise<RepoImports> {

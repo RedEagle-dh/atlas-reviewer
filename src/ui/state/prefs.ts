@@ -1,5 +1,5 @@
 /** Per-viewer choices kept in localStorage: theme, filters, toggles. */
-import { useCallback, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { readStored, writeStored } from "../lib/storage";
 
 /** A string choice out of `allowed`, remembered under `key`. */
@@ -30,16 +30,48 @@ export function useFlag(key: string, fallback: boolean): [boolean, (value: boole
 
 export const THEMES = ["system", "light", "dark"] as const;
 export type Theme = (typeof THEMES)[number];
+/** What a theme choice comes down to: `system` follows the operating system. */
+export type ResolvedTheme = "light" | "dark";
 
-/** The theme choice; writes `data-theme` on `<html>` (none = follow the system). */
-export function useTheme(): [Theme, (theme: Theme) => void] {
+const DARK_QUERY = "(prefers-color-scheme: dark)";
+
+function systemTheme(): ResolvedTheme {
+	try {
+		return window.matchMedia(DARK_QUERY).matches ? "dark" : "light";
+	} catch {
+		return "light";
+	}
+}
+
+/**
+ * The theme choice, and what it resolves to. Writes `class="dark"` on `<html>` (the variant
+ * every `dark:` utility and the shadcn tokens hang on); the script in `index.html` does the same
+ * before the first paint. Call it once, at the root of the app.
+ */
+export function useTheme(): [Theme, (theme: Theme) => void, ResolvedTheme] {
 	const [theme, setTheme] = useChoice<Theme>("theme", THEMES, "system");
+	const [system, setSystem] = useState<ResolvedTheme>(systemTheme);
 	useEffect(() => {
-		const root = document.documentElement;
-		if (theme === "system") delete root.dataset.theme;
-		else root.dataset.theme = theme;
-	}, [theme]);
-	return [theme, setTheme];
+		const query = window.matchMedia(DARK_QUERY);
+		const onChange = () => setSystem(query.matches ? "dark" : "light");
+		query.addEventListener("change", onChange);
+		return () => query.removeEventListener("change", onChange);
+	}, []);
+	const resolved = theme === "system" ? system : theme;
+	useEffect(() => {
+		document.documentElement.classList.toggle("dark", resolved === "dark");
+	}, [resolved]);
+	return [theme, setTheme, resolved];
+}
+
+const ResolvedThemeContext = createContext<ResolvedTheme>("light");
+
+/** Provided once by `app.tsx` with what `useTheme()` resolved to. */
+export const ResolvedThemeProvider = ResolvedThemeContext.Provider;
+
+/** `light` or `dark`, for what takes the theme as a value (React Flow's `forceColorMode`, the toaster). */
+export function useResolvedTheme(): ResolvedTheme {
+	return useContext(ResolvedThemeContext);
 }
 
 /** The visible categories of a review; defaults from the review, remembered per review. */

@@ -70,4 +70,19 @@ describe("labelNodes", () => {
 		expect(cut?.width).toBeGreaterThan(280);
 		expect(cut?.text).toMatch(/^installed-mod.*….*name\.ts$/);
 	});
+
+	test("a file's node has room for the marks beside its name", () => {
+		const name = "installed-module-registry.ts"; // 28 characters: 196 px
+		const labels = labelNodes(
+			[
+				{ node: fileNode("a/x.ts", false), name },
+				{ node: fileNode("a/y.ts", true), name, hint: "a/b" },
+			],
+			measure,
+		);
+		// padding and borders 22, the status mark and the viewed mark 22 each, 2 spare
+		expect(labels.get("f:a/x.ts")?.width).toBe(196 + 22 + 2 * 22 + 2);
+		// a neighbour shows its status only
+		expect(labels.get("f:a/y.ts")?.width).toBe(196 + 22 + 22 + 2);
+	});
 });

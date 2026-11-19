@@ -3,8 +3,12 @@
  * right, joined by lines (arrowhead at the imported side; dashed = types only). Changed files
  * first; unchanged and left-out ones behind a toggle; npm packages as a compact list.
  */
-import { type ReactNode, useState } from "react";
-import type { FileView } from "../../../core/types";
+import { type ReactNode, useId, useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
+import type { FileView, ImportKind } from "../../../core/types";
 import { StatusMark } from "../../components/marks";
 import { baseName, dirName } from "../../lib/files";
 import { fileRoute } from "../../router";
@@ -12,10 +16,34 @@ import { useAtlas } from "../../state/atlas";
 import { categoryLabel, S } from "../../strings";
 import type { Neighbour, Neighbours, Side } from "./neighbours";
 
+/*
+ * The geometry the connector lines are computed from. The markup takes its heights from the same
+ * constants, so a line ends exactly at the middle of its row.
+ */
+/** The line above each list ("importiert 2 Dateien"). */
 const HEAD_H = 28;
-const ROW_H = 30;
+/** One row of a list: the 28 px row and the 4 px between two rows. */
+const ROW_H = 32;
+/** The column between a list and the centre box, where the lines run. */
 const GAP_W = 72;
+/** The box of the file itself. */
 const CENTRE_H = 56;
+
+/**
+ * On what Tab reaches below the sticky header: brought into view from further down, it stops below
+ * the header (8rem covers the header's three rows at a narrow width) instead of under it.
+ */
+export const BELOW_HEADER = "scroll-mt-32";
+
+/** What is imported and how, for the tooltip of a row or a package. */
+function ImportedNames({ kind, names }: { kind: ImportKind; names: string[] }) {
+	return (
+		<span>
+			<span className="font-medium">{S.importKind[kind]}:</span>{" "}
+			<span className="font-mono">{S.names(names)}</span>
+		</span>
+	);
+}
 
 function NeighbourRow({ n, side }: { n: Neighbour; side: "imports" | "importers" }) {
 	const { href, meta } = useAtlas();
@@ -28,25 +56,51 @@ function NeighbourRow({ n, side }: { n: Neighbour; side: "imports" | "importers"
 				: S.status.unchanged;
 	const link =
 		side === "importers" ? fileRoute({ path: n.path, line: n.line }) : fileRoute({ path: n.path });
+	const dir = dirName(n.path);
 	return (
-		<li>
-			<a
-				className={`nb-row where-${n.where}${n.kind === "type" ? " is-type" : ""}`}
-				href={href(link)}
-				title={side === "importers" ? `${n.path}: ${S.openAtLine(n.line)}` : n.path}
-				data-path={n.path}
-			>
-				<StatusMark status={status} />
-				<span className="nb-path">
-					<span className="nb-dir">{dirName(n.path)}/</span>
-					<span className="nb-name">{baseName(n.path)}</span>
-				</span>
-				<span className="nb-tag">{tag}</span>
-				<span className="nb-names" role="tooltip">
-					<b>{S.importKind[n.kind]}</b>
-					{S.names(n.names)}
-				</span>
-			</a>
+		<li className="flex items-center" style={{ height: ROW_H }}>
+			<Tooltip>
+				<TooltipTrigger
+					render={
+						<a
+							href={href(link)}
+							data-path={n.path}
+							aria-description={`${S.importKind[n.kind]}: ${S.names(n.names)}`}
+						/>
+					}
+					className={cn(
+						"grid h-7 w-full min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md border px-2 text-xs outline-none hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+						BELOW_HEADER,
+						n.kind === "type" && "border-dashed",
+						// A file of the review is a card; one outside it stays flat and quiet.
+						n.where === "review" ? "bg-card" : "text-muted-foreground",
+					)}
+				>
+					{/* The tag says the status in words: the mark is for the eye only, without its own tooltip. */}
+					<span className="pointer-events-none flex" aria-hidden="true">
+						<StatusMark status={status} />
+					</span>
+					{/* Cut from the left: the name stays, the folders go. The left-to-right marks keep a
+					    name's leading or trailing punctuation (".env", "$id.tsx") where it belongs. */}
+					<span className="truncate text-left [direction:rtl]">
+						{"\u200e"}
+						{dir === "" ? null : <span className="text-muted-foreground">{dir}/</span>}
+						<span className={cn("font-medium", n.where === "review" && "text-foreground")}>
+							{baseName(n.path)}
+						</span>
+						{"\u200e"}
+					</span>
+					<span className="whitespace-nowrap text-muted-foreground">{tag}</span>
+				</TooltipTrigger>
+				<TooltipContent side="bottom" align="start" className="max-w-sm">
+					<div className="grid gap-1 wrap-anywhere">
+						<span className="font-mono">
+							{side === "importers" ? `${n.path}: ${S.openAtLine(n.line)}` : n.path}
+						</span>
+						<ImportedNames kind={n.kind} names={n.names} />
+					</div>
+				</TooltipContent>
+			</Tooltip>
 		</li>
 	);
 }
@@ -58,6 +112,28 @@ function shownRows(side: Side, showUnchanged: boolean, showExcluded: boolean): N
 		...(showExcluded ? side.excluded : []),
 		...(showUnchanged ? side.unchanged : []),
 	];
+}
+
+/** "+ 3 unveränderte": shows a group of rows that is left out at first, or hides it again. */
+function MoreButton({
+	shown,
+	more,
+	onToggle,
+}: {
+	shown: boolean;
+	more: string;
+	onToggle: (shown: boolean) => void;
+}) {
+	return (
+		<Button
+			variant="ghost"
+			size="xs"
+			className={cn("text-muted-foreground", BELOW_HEADER)}
+			onClick={() => onToggle(!shown)}
+		>
+			{shown ? S.fewer : more}
+		</Button>
+	);
 }
 
 function Column({
@@ -80,28 +156,39 @@ function Column({
 	children?: ReactNode;
 }) {
 	const total = side.changed.length + side.excluded.length + side.unchanged.length;
+	const head = useId();
 	return (
-		<div className={`nb-column nb-${which}`}>
-			<div className="nb-head">
+		<div className="min-w-0">
+			<div
+				id={head}
+				className="truncate text-xs text-muted-foreground"
+				style={{ height: HEAD_H, lineHeight: `${HEAD_H}px` }}
+			>
 				{which === "imports" ? S.importsColumn(total) : S.importersColumn(total)}
 			</div>
-			<ul className="nb-list">
+			<ul aria-labelledby={head}>
 				{rows.map((n) => (
 					<NeighbourRow key={n.path} n={n} side={which} />
 				))}
 			</ul>
-			<div className="nb-more">
-				{side.excluded.length > 0 ? (
-					<button type="button" className="btn quiet" onClick={() => setExcluded(!showExcluded)}>
-						{showExcluded ? S.fewer : S.moreExcluded(side.excluded.length)}
-					</button>
-				) : null}
-				{side.unchanged.length > 0 ? (
-					<button type="button" className="btn quiet" onClick={() => setUnchanged(!showUnchanged)}>
-						{showUnchanged ? S.fewer : S.moreUnchanged(side.unchanged.length)}
-					</button>
-				) : null}
-			</div>
+			{side.excluded.length + side.unchanged.length > 0 ? (
+				<div className="-ml-2 flex flex-wrap gap-1">
+					{side.excluded.length > 0 ? (
+						<MoreButton
+							shown={showExcluded}
+							more={S.moreExcluded(side.excluded.length)}
+							onToggle={setExcluded}
+						/>
+					) : null}
+					{side.unchanged.length > 0 ? (
+						<MoreButton
+							shown={showUnchanged}
+							more={S.moreUnchanged(side.unchanged.length)}
+							onToggle={setUnchanged}
+						/>
+					) : null}
+				</div>
+			) : null}
 			{children}
 		</div>
 	);
@@ -120,7 +207,7 @@ function Lines({
 	height: number;
 }) {
 	return (
-		<svg className="nb-lines" width={GAP_W} height={height} aria-hidden="true">
+		<svg className="overflow-visible" width={GAP_W} height={height} aria-hidden="true">
 			{rows.map((n, i) => {
 				const y = HEAD_H + i * ROW_H + ROW_H / 2;
 				const rowX = rowsOnLeft ? 0 : GAP_W;
@@ -131,12 +218,20 @@ function Lines({
 				const tipY = rowsOnLeft ? y : centre;
 				const arrow = `${tipX},${tipY} ${tipX + 7},${tipY - 3.5} ${tipX + 7},${tipY + 3.5}`;
 				return (
+					// Stronger for a file of the review, like its row.
 					<g
 						key={n.path}
-						className={`nb-line where-${n.where}${n.kind === "type" ? " is-type" : ""}`}
+						className={
+							n.where === "review" ? "fill-edge-strong stroke-edge-strong" : "fill-edge stroke-edge"
+						}
 					>
-						<path d={d} />
-						<polygon points={arrow} />
+						<path
+							d={d}
+							fill="none"
+							strokeWidth={1.3}
+							strokeDasharray={n.kind === "type" ? "4 3" : undefined}
+						/>
+						<polygon points={arrow} stroke="none" />
 					</g>
 				);
 			})}
@@ -158,12 +253,17 @@ export function Neighbourhood({ view, neighbours }: { view: FileView; neighbours
 		!view.importsRead &&
 		importers.changed.length + importers.excluded.length + importers.unchanged.length === 0
 	)
-		return <p className="nb-none">{S.noExtractor}</p>;
+		return <p className="text-sm text-muted-foreground">{S.noExtractor}</p>;
 	const tallest = Math.max(left.length, right.length, 2);
 	const centre = HEAD_H + Math.min((tallest * ROW_H) / 2, 150);
 	const height = HEAD_H + tallest * ROW_H;
 	return (
-		<div className="nb-grid">
+		<div
+			className="grid items-start"
+			style={{
+				gridTemplateColumns: `minmax(0, 1fr) ${GAP_W}px minmax(150px, 220px) ${GAP_W}px minmax(0, 1fr)`,
+			}}
+		>
 			<Column
 				which="imports"
 				side={neighbours.imports}
@@ -174,32 +274,55 @@ export function Neighbourhood({ view, neighbours }: { view: FileView; neighbours
 				setExcluded={setImportsExcluded}
 			>
 				{neighbours.packages.length > 0 ? (
-					<div className="nb-packages">
-						<span className="nb-packages-label">{S.packages}</span>
+					<div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+						<span className="text-muted-foreground">{S.packages}</span>
 						{neighbours.packages.map((p) => (
-							<span
-								key={p.name}
-								className={`nb-package${p.kind === "type" ? " is-type" : ""}`}
-								title={`${S.importKind[p.kind]}: ${S.names(p.names)}`}
-							>
-								{p.name}
-							</span>
+							<Tooltip key={p.name}>
+								{/* In the tab order: the tooltip is the only place that shows what is imported.
+								    A screen reader gets the same as the badge's description. */}
+								<TooltipTrigger
+									render={
+										<Badge
+											variant="outline"
+											tabIndex={0}
+											aria-description={`${S.importKind[p.kind]}: ${S.names(p.names)}`}
+											className={cn(
+												"font-normal",
+												p.kind === "type" && "border-dashed",
+												BELOW_HEADER,
+											)}
+										/>
+									}
+								>
+									{p.name}
+								</TooltipTrigger>
+								<TooltipContent side="bottom" className="max-w-sm">
+									<div className="wrap-anywhere">
+										<ImportedNames kind={p.kind} names={p.names} />
+									</div>
+								</TooltipContent>
+							</Tooltip>
 						))}
 					</div>
 				) : null}
 				{neighbours.unresolved.length > 0 ? (
-					<div className="nb-packages nb-unresolved">
-						<span className="nb-packages-label">{S.unresolved}</span>
+					<div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+						<span className="text-muted-foreground">{S.unresolved}</span>
 						{neighbours.unresolved.map((u) => (
-							<code key={`${u.line}:${u.specifier}`}>{u.specifier}</code>
+							<code key={`${u.line}:${u.specifier}`} className="font-mono text-destructive">
+								{u.specifier}
+							</code>
 						))}
 					</div>
 				) : null}
 			</Column>
 			<Lines rows={left} centre={centre} rowsOnLeft height={height} />
-			<div className="nb-centre" style={{ marginTop: centre - CENTRE_H / 2 }}>
+			<div
+				className="flex items-center justify-center gap-2 overflow-hidden rounded-lg border border-foreground/30 bg-card px-3 font-medium"
+				style={{ height: CENTRE_H, marginTop: centre - CENTRE_H / 2 }}
+			>
 				<StatusMark status={view.status} />
-				<span className="nb-centre-name">{baseName(view.path)}</span>
+				<span className="truncate">{baseName(view.path)}</span>
 			</div>
 			<Lines rows={right} centre={centre} rowsOnLeft={false} height={height} />
 			<Column

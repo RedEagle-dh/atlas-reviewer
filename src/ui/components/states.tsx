@@ -1,13 +1,49 @@
 /** Loading and error states, shared by the shell and the views. */
+import type { ReactNode } from "react";
+import { Button } from "@/components/ui/button";
+import {
+	Empty,
+	EmptyContent,
+	EmptyDescription,
+	EmptyHeader,
+	EmptyTitle,
+} from "@/components/ui/empty";
+import { Spinner } from "@/components/ui/spinner";
 import { ApiError } from "../api";
 import { S } from "../strings";
 
 export function Loading({ label = S.loading }: { label?: string }) {
 	return (
-		<div className="state" role="status" aria-live="polite">
-			<p>{label}</p>
-			<div className="loading-line" />
-		</div>
+		<Empty className="h-full min-h-60" role="status" aria-live="polite">
+			<EmptyHeader>
+				<Spinner aria-hidden="true" className="text-muted-foreground" />
+				<EmptyDescription>{label}</EmptyDescription>
+			</EmptyHeader>
+		</Empty>
+	);
+}
+
+/**
+ * A full-area message: a title, an explanation and what the reader can do about it (buttons or
+ * links). The one shape for "not found", "unknown range" and errors.
+ */
+export function Notice({
+	title,
+	children,
+	actions,
+}: {
+	title: string;
+	children?: ReactNode;
+	actions?: ReactNode;
+}) {
+	return (
+		<Empty className="h-full min-h-60" role="alert">
+			<EmptyHeader className="max-w-xl">
+				<EmptyTitle>{title}</EmptyTitle>
+				{children ? <EmptyDescription>{children}</EmptyDescription> : null}
+			</EmptyHeader>
+			{actions ? <EmptyContent className="flex-row justify-center">{actions}</EmptyContent> : null}
+		</Empty>
 	);
 }
 
@@ -33,17 +69,21 @@ export function ErrorView({
 }) {
 	const answered = error instanceof ApiError;
 	return (
-		<div className="state" role="alert">
-			<h2>{title ?? (answered ? S.errorTitleServer : S.errorTitle)}</h2>
-			<p>{answered ? S.errorHintServer : S.errorHint}</p>
-			<pre>{errorMessage(error)}</pre>
-			{retry ? (
-				<div className="actions">
-					<button type="button" className="btn" onClick={retry}>
+		<Empty className="h-full min-h-60" role="alert">
+			<EmptyHeader className="max-w-xl">
+				<EmptyTitle>{title ?? (answered ? S.errorTitleServer : S.errorTitle)}</EmptyTitle>
+				<EmptyDescription>{answered ? S.errorHintServer : S.errorHint}</EmptyDescription>
+			</EmptyHeader>
+			<EmptyContent className="max-w-2xl">
+				<pre className="w-full rounded-lg bg-muted px-3 py-2 text-left font-mono text-xs whitespace-pre-wrap text-foreground">
+					{errorMessage(error)}
+				</pre>
+				{retry ? (
+					<Button variant="outline" onClick={retry}>
 						{S.retry}
-					</button>
-				</div>
-			) : null}
-		</div>
+					</Button>
+				) : null}
+			</EmptyContent>
+		</Empty>
 	);
 }

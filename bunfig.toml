@@ -1,0 +1,5 @@
+# The UI bundle (src/ui/index.html, served by Bun.serve) is styled with Tailwind CSS: this plugin
+# compiles it while Bun bundles the page. Bun reads this file from the working directory, so the
+# server has to be started from here (`bun run atlas` does; the CLI re-starts itself otherwise).
+[serve.static]
+plugins = ["bun-plugin-tailwind"]

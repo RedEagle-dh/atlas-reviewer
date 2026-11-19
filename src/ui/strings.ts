@@ -25,6 +25,9 @@ const CATEGORY_WORDS: Readonly<Record<string, string>> = {
 	other: "Sonstiges",
 };
 
+/** The end of "Nicht gespeichert: …" when the range has new commits; said in two places. */
+const RANGE_MOVED = "der Code hat sich geändert (neue Commits).";
+
 export const S = {
 	loading: "Lade …",
 	loadingFile: (name: string) => `Lade ${name} …`,
@@ -35,28 +38,38 @@ export const S = {
 	errorHintServer: "Die Meldung des Servers:",
 	unknownRange: (id: string) => `Den Bereich „${id}“ kennt dieses Review nicht.`,
 	toFirstRange: "Zum ersten Bereich",
+	unknownView: "Diese Seite gibt es nicht.",
 	rangeMoved: (from: string, to: string) =>
 		`Der Bereich hat neue Commits (${from} → ${to}): Karte, Liste und Code zeigen jetzt den neuen Stand. Was sich seitdem geändert hat, gilt als nicht gesehen.`,
 	dismiss: "Ausblenden",
+	/** The name of the place where toasts appear, for a screen reader. */
+	toasts: "Meldungen",
 
 	category: CATEGORY_WORDS,
 	/** The chapter of the files no chapter matches (when the review names it not). */
 	restChapter: "Übrige",
 
-	// Top bar
+	// Header bar and the sidebar's head
 	range: "Bereich",
+	rangeCurrent: (label: string) => `Bereich: ${label}`,
 	rangeShas: (base: string, head: string) => `${base} bis ${head}`,
 	categories: "Kategorien",
 	categoryToggle: (label: string, on: boolean) =>
 		on ? `${label} ausblenden` : `${label} einblenden`,
+	categoryFiles: (label: string, n: number) => `${label}: ${plural(n, "Datei", "Dateien")}`,
 	search: "Suchen",
 	searchShortcut: (mac: boolean) => (mac ? "⌘K" : "Strg K"),
 	progress: (seen: number, total: number) => `${fmt(seen)} von ${fmt(total)} gesehen`,
+	/** In the header bar, while the sidebar (which says it in full) is closed. */
 	progressShort: (seen: number, total: number) => `${fmt(seen)}/${fmt(total)} gesehen`,
 	theme: { system: "Wie das System", light: "Hell", dark: "Dunkel" },
 	themeToggle: (current: string) => `Farbschema: ${current} (wechseln)`,
 	sidebarShow: "Seitenleiste zeigen",
 	sidebarHide: "Seitenleiste ausblenden",
+	/** What a screen reader hears for the sidebar as a sheet (narrow windows). */
+	sidebarTitle: "Seitenleiste",
+	sidebarDescription: "Bereich, Kapitel und Dateien des Reviews.",
+	skipFiles: "Dateiliste überspringen",
 
 	// Sidebar
 	tabChapters: "Kapitel",
@@ -64,8 +77,6 @@ export const S = {
 	chapterProgress: (seen: number, total: number) => `${fmt(seen)}/${fmt(total)}`,
 	chapterOnMap: "Kapitel auf der Karte zeigen",
 	folderOnMap: "Ordner auf der Karte zeigen",
-	collapse: "Zuklappen",
-	expand: "Aufklappen",
 	noVisibleFiles: "Keine Datei in den gewählten Kategorien.",
 	noVisibleFilesHint: "Oben eine Kategorie einblenden.",
 
@@ -86,7 +97,6 @@ export const S = {
 	} satisfies Record<FileStatus | "unchanged", string>,
 	viewed: "gesehen",
 	changedSinceViewed: "seit dem Ansehen geändert",
-	lines: (added: number, deleted: number) => `+${fmt(added)} −${fmt(deleted)}`,
 	linesTitle: (added: number, deleted: number) =>
 		`${plural(added, "Zeile", "Zeilen")} hinzu, ${plural(deleted, "Zeile", "Zeilen")} entfernt`,
 	files: (n: number) => plural(n, "Datei", "Dateien"),
@@ -96,6 +106,9 @@ export const S = {
 	searchEmpty: "Keine sichtbare Datei passt.",
 	searchHint: "Enter öffnet, ↑ ↓ wählt, Esc schließt",
 	searchLabel: "Dateien durchsuchen",
+	/** The same hint as `searchHint`, one word per key (the keys are drawn next to them). */
+	searchKeys: { open: "öffnet", move: "wählt", close: "schließt" },
+	keyEsc: "Esc",
 
 	// Map
 	mapTitle: "Karte",
@@ -137,6 +150,8 @@ export const S = {
 	beforeChange: "vor der Änderung (eine Seite ist gelöscht)",
 	emptyLevel: "Hier ist keine Datei der gewählten Kategorien.",
 	mapEmpty: "Keine Datei in den gewählten Kategorien.",
+	minimap: "Minikarte",
+	nodeKeys: "Enter oder Leertaste: öffnen",
 
 	// File page
 	fileNotFound: "Diese Datei gibt es in diesem Stand nicht.",
@@ -146,10 +161,12 @@ export const S = {
 	prevFile: "Vorherige Datei",
 	nextFile: "Nächste Datei",
 	showOnMap: "Auf der Karte zeigen",
+	pathNav: "Ordner der Datei",
 	copyPath: "Pfad kopieren",
 	copied: "Kopiert",
+	copyFailed: "Kopieren nicht möglich: der Browser gibt die Zwischenablage nicht frei.",
 	chapter: "Kapitel",
-	renamedFrom: (old: string) => `umbenannt von ${old}`,
+	renamedFrom: "umbenannt von",
 	newFile: "neue Datei",
 	deletedFile: "Gelöschte Datei: gezeigt wird der alte Stand.",
 	unchangedHint: "Gehört nicht zu den Änderungen; nur zum Nachlesen.",
@@ -165,7 +182,6 @@ export const S = {
 			: n < 1024 * 1024
 				? `${fmt(Math.round(n / 1024))} KB`
 				: `${(n / 1024 / 1024).toFixed(1).replace(".", ",")} MB`,
-	keyHint: (key: string) => `Taste ${key}`,
 
 	// Neighbourhood
 	neighbourhood: "Zusammenhang",
@@ -205,9 +221,108 @@ export const S = {
 	changeOf: (i: number, n: number) => `${fmt(i)} von ${fmt(n)}`,
 	changes: (n: number) => plural(n, "Änderung", "Änderungen"),
 	folded: (n: number) => `… ${plural(n, "unveränderte Zeile", "unveränderte Zeilen")}`,
-	foldedTitle: "Klick: aufklappen",
 	importLink: (target: string) => `Zu ${target}`,
 	removedLines: (n: number) => plural(n, "Zeile entfernt", "Zeilen entfernt"),
+
+	// Comments
+	comments: "Kommentare",
+	commentCount: (n: number) => plural(n, "Kommentar", "Kommentare"),
+	/** Where a comment points: a line, a range of lines, or (without a line) the whole file. */
+	place: (line?: number, endLine?: number) =>
+		line === undefined
+			? "Ganze Datei"
+			: endLine === undefined || endLine === line
+				? `Zeile ${fmt(line)}`
+				: `Zeilen ${fmt(line)}–${fmt(endLine)}`,
+	/** What a screen reader hears for a comment or its text field: `place` in a sentence. */
+	commentOn: (line?: number, endLine?: number) =>
+		line === undefined
+			? "Kommentar zur ganzen Datei"
+			: endLine === undefined || endLine === line
+				? `Kommentar zu Zeile ${fmt(line)}`
+				: `Kommentar zu den Zeilen ${fmt(line)}–${fmt(endLine)}`,
+	commentLine: (line: number) => `Zeile ${fmt(line)} kommentieren`,
+	/** On the "+" of a line: what a press does, and what a drag does. */
+	commentLineHint: "Kommentieren (ziehen: mehrere Zeilen)",
+	commentFile: "Datei kommentieren",
+	/**
+	 * The tooltip of "Datei kommentieren", followed by the key `c`: the key comments the line a
+	 * link points at when there is one, and the whole file otherwise.
+	 */
+	commentFileHint: (line?: number) =>
+		line === undefined
+			? "Die ganze Datei kommentieren"
+			: `Die ganze Datei kommentieren. Zeile ${fmt(line)}:`,
+	fileComments: "Kommentare zur Datei",
+	commentPlaceholder:
+		"Auftrag oder Frage an den Coding-Agenten, z. B. „Fehlerfall behandeln“ oder „Warum wird hier zweimal geladen?“",
+	commentSubmit: "Kommentieren",
+	commentSave: "Speichern",
+	cancel: "Abbrechen",
+	submitShortcut: (mac: boolean) => (mac ? "⌘↵" : "Strg ↵"),
+	commentEdit: "Bearbeiten",
+	commentDelete: "Löschen",
+	commentDeleted: "Kommentar gelöscht",
+	undo: "Rückgängig",
+	/** These three are followed by why: `whyFailed`. */
+	commentNotSaved: (why: string) => `Nicht gespeichert: ${why}`,
+	commentNotDeleted: (why: string) => `Nicht gelöscht: ${why}`,
+	commentNotRestored: (why: string) => `Nicht wiederhergestellt: ${why}`,
+	/**
+	 * Why a request about a comment failed: in the reader's words when the range has moved on or
+	 * no answer came at all (the browser's own word for that is "Failed to fetch"), else what the
+	 * server said.
+	 */
+	whyFailed: (failure: { message: string; moved: boolean; answered: boolean } | null) =>
+		failure === null
+			? ""
+			: failure.moved
+				? RANGE_MOVED
+				: failure.answered
+					? failure.message
+					: "der Server antwortet nicht. Läuft er noch?",
+	/** A new comment that was refused because of it: the composer keeps the text. */
+	commentMoved: `Nicht gespeichert: ${RANGE_MOVED} Stelle prüfen und erneut senden.`,
+	/** A comment begun on another state of the code than the page shows now. */
+	composerElsewhere:
+		"Begonnen auf einem anderen Stand des Codes: Die Zeilen können jetzt andere sein. Stelle prüfen, dann senden.",
+	/** On the page of a file the range no longer has: the comment that was being written on it. */
+	heldDraft: "Auf dieser Datei war ein Kommentar in Arbeit. Sein Text:",
+	heldDraftCopy: "Text kopieren",
+	heldDraftDiscard: "Verwerfen",
+	composerLinesGone:
+		"Die Zeilen, für die dieser Kommentar begonnen wurde, gibt es nicht mehr: Er gilt jetzt der ganzen Datei.",
+	/** Esc is pressed in a field that holds text: why nothing happened. */
+	escKeepsText: "Esc schließt nur ein leeres Feld. „Abbrechen“ verwirft den Text.",
+	escKeepsEdit: "Esc schließt nur ohne Änderung. „Abbrechen“ verwirft sie.",
+	commentOutdated: "Code seitdem geändert",
+	commentOutdatedHint:
+		"Die Zeilen lauten nicht mehr wie beim Kommentieren. Der Prompt zitiert sie so, wie sie damals waren.",
+	commentGoneHint:
+		"Diese Zeilen gibt es in der Datei nicht mehr. Der Prompt zitiert sie so, wie sie damals waren.",
+	commentsOpen: (n: number) =>
+		n === 0 ? "Kommentare öffnen" : `Kommentare öffnen (${plural(n, "Kommentar", "Kommentare")})`,
+	commentsHint: "Sammlung für den Coding-Agenten: als Prompt kopieren und ihm geben.",
+	tabList: "Liste",
+	tabPrompt: "Prompt",
+	promptLabel: "Prompt für den Coding-Agenten",
+	copyPrompt: "Als Prompt kopieren",
+	promptCopied: (n: number) => `Prompt mit ${plural(n, "Kommentar", "Kommentaren")} kopiert`,
+	copyByHand: (mac: boolean) =>
+		`Der Browser gibt die Zwischenablage nicht frei. Der Prompt ist markiert: mit ${mac ? "⌘C" : "Strg+C"} kopieren.`,
+	clearComments: "Alle löschen",
+	clearTitle: (n: number) =>
+		n === 1 ? "Den Kommentar löschen?" : `Alle ${fmt(n)} Kommentare löschen?`,
+	clearHint: "Das lässt sich nicht rückgängig machen.",
+	noComments: "Noch keine Kommentare",
+	noCommentsHint:
+		"Im Code auf das + neben einer Zeilennummer klicken, für mehrere Zeilen von dort aus ziehen; für die ganze Datei „Datei kommentieren“ über dem Code wählen oder c drücken. Ein Kommentar ist ein Auftrag oder eine Frage an den Coding-Agenten.",
+	commentsNotLoaded: "Die Kommentare wurden nicht geladen.",
+	/** In the sheet when asking for the list again failed: what it shows is what this tab knew. */
+	commentsStale: "Die Kommentare konnten nicht neu geladen werden.",
+	commentsStaleHint: "Liste und Prompt zeigen den Stand, den dieser Tab zuletzt kannte.",
+	commentUnsaved: "Ein Kommentar ist noch in Arbeit: erst speichern oder abbrechen.",
+	close: "Schließen",
 } as const;
 
 /** The label of a category id: the review's own label, else the word for a built-in id, else the id. */

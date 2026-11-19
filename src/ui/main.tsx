@@ -1,7 +1,5 @@
-/** Entry of the browser bundle: global styles and the app. */
-import "./styles/tokens.css";
-import "./styles/base.css";
-import "./styles/shell.css";
+/** Entry of the browser bundle: the stylesheet and the app. */
+import "./styles/globals.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app";

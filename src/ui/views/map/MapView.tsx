@@ -4,8 +4,6 @@
  * this component turns them into React Flow nodes and edges and handles hover, clicks, the
  * viewport and the controls.
  */
-import "@xyflow/react/dist/base.css";
-import "../../styles/map.css";
 import {
 	MiniMap,
 	type NodeMouseHandler,
@@ -15,28 +13,56 @@ import {
 	useReactFlow,
 	type Viewport,
 } from "@xyflow/react";
+import { InfoIcon, MaximizeIcon } from "lucide-react";
 import {
+	type ComponentProps,
+	Fragment,
+	type KeyboardEvent,
 	type RefObject,
 	useCallback,
 	useEffect,
+	useId,
 	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
 } from "react";
-import { Icon } from "../../components/icons";
+import {
+	Breadcrumb,
+	BreadcrumbItem,
+	BreadcrumbLink,
+	BreadcrumbList,
+	BreadcrumbPage,
+	BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import { Button } from "@/components/ui/button";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
+import { StatusMark } from "../../components/marks";
 import { baseName, countViewed, dirName, viewedMark } from "../../lib/files";
 import { writeStored } from "../../lib/storage";
 import { fileRoute, type Grouping, mapRoute, type Route, readMapParams } from "../../router";
 import { useAtlas } from "../../state/atlas";
-import { useChoice, useFlag } from "../../state/prefs";
+import { useChoice, useFlag, useResolvedTheme } from "../../state/prefs";
 import { rememberViewport, takeRestore } from "../../state/route";
-import { S } from "../../strings";
+import { fmt, S } from "../../strings";
 import { buildGroupTree, type Group, groupStats, locateGroup, ROOT_UNIT, trail } from "./grouping";
 import { labelNodes, type Measure } from "./labels";
 import { type Box, type Direction, layoutLevel, nodeSize, placeTip, type Rect } from "./layout";
 import { buildLevel, drawLevel, type LevelNode, neighbourhood, relationsOf } from "./level";
-import { EDGE_TYPES, type ImportFlowEdge, type MapFlowNode, NODE_TYPES } from "./nodes";
+import {
+	CONTEXT_CARD,
+	CountLabel,
+	EDGE_TYPES,
+	type ImportFlowEdge,
+	type MapFlowNode,
+	NODE_TYPES,
+	NODE_WRAPPER,
+	STATUSES,
+} from "./nodes";
 
 /** Below this zoom the node text gets too small to read: the first view never goes lower… */
 const READABLE_ZOOM = 0.72;
@@ -48,7 +74,7 @@ const FRAME_ID = "\u0000frame";
 /** The first view keeps the drawing below the floating controls and off the edges. */
 const PAD = 24;
 const TOP = 60;
-/** React Flow's minimap: 200 × 150 px, 15 px from the corner. */
+/** React Flow's minimap: 200 × 150 px, 15 px from the corner (the margin of React Flow's panels). */
 const MINIMAP = { width: 200, height: 150, margin: 15 };
 
 export function groupLabel(group: Group): string {
@@ -75,7 +101,7 @@ function fileHint(path: string, group: Group, context: boolean): string {
 // Measuring names in the map's fonts
 // ---------------------------------------------------------------------------------------------
 
-/** As in map.css: file name, context label, group title, small counts. */
+/** As drawn in nodes.tsx: file name, context label, group title, small counts. */
 const FONTS = {
 	file: "600 14px",
 	context: "550 13px",
@@ -85,7 +111,10 @@ const FONTS = {
 let canvas: CanvasRenderingContext2D | null | undefined;
 const widths = new Map<string, number>();
 
-/** Text width on a canvas in the UI font (`--font-ui`); a rough estimate without a canvas. */
+/**
+ * Text width on a canvas in the UI font: `--font-sans`, the family the nodes are drawn in
+ * (`font-sans` in nodes.tsx). A rough estimate without a canvas.
+ */
 const measureText: Measure = (text, style) => {
 	const key = `${style}|${text}`;
 	const known = widths.get(key);
@@ -93,7 +122,9 @@ const measureText: Measure = (text, style) => {
 	if (canvas === undefined) canvas = document.createElement("canvas").getContext("2d");
 	let width = text.length * 7.5;
 	if (canvas) {
-		const family = getComputedStyle(document.documentElement).getPropertyValue("--font-ui").trim();
+		const family = getComputedStyle(document.documentElement)
+			.getPropertyValue("--font-sans")
+			.trim();
 		canvas.font = `${FONTS[style]} ${family || "sans-serif"}`;
 		width = canvas.measureText(text).width;
 	}
@@ -102,6 +133,151 @@ const measureText: Measure = (text, style) => {
 };
 
 // ---------------------------------------------------------------------------------------------
+// The pieces around the drawing
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * One of a few options, as a row of toggles. Base UI lets a group go empty (pressing the chosen
+ * toggle again); here one option is always chosen, so that press changes nothing.
+ */
+function Choice<T extends string>({
+	value,
+	options,
+	onChange,
+	...group
+}: {
+	value: T;
+	options: readonly (readonly [T, string])[];
+	onChange: (value: T) => void;
+} & Omit<
+	ComponentProps<typeof ToggleGroup>,
+	"value" | "defaultValue" | "onValueChange" | "onChange"
+>) {
+	return (
+		<ToggleGroup
+			variant="outline"
+			size="sm"
+			spacing={0}
+			value={[value]}
+			onValueChange={(pressed) => {
+				const next = options.find(([option]) => pressed.includes(option));
+				if (next) onChange(next[0]);
+			}}
+			{...group}
+		>
+			{options.map(([option, label]) => (
+				<ToggleGroupItem key={option} value={option}>
+					{label}
+				</ToggleGroupItem>
+			))}
+		</ToggleGroup>
+	);
+}
+
+const GROUPINGS = [
+	["chapters", S.groupingChapters],
+	["dirs", S.groupingDirs],
+] as const satisfies readonly (readonly [Grouping, string])[];
+const DIRECTIONS = [
+	["ltr", S.directionLtr],
+	["rtl", S.directionRtl],
+] as const satisfies readonly (readonly [Direction, string])[];
+
+/** Where the shown group stands: every level above it is a link that keeps the grouping. */
+function Trail({ trail, grouping }: { trail: Group[]; grouping: Grouping }) {
+	const { href } = useAtlas();
+	return (
+		<Breadcrumb aria-label={S.mapTitle} className="min-w-0">
+			<BreadcrumbList>
+				{trail.map((group, i) => {
+					const name = (
+						<>
+							{group.chapter ? (
+								<span className="text-muted-foreground tabular-nums">{group.chapter.index} </span>
+							) : null}
+							{group.kind === "root" ? S.overview : groupLabel(group)}
+						</>
+					);
+					return (
+						<Fragment key={group.id || "root"}>
+							{i > 0 ? <BreadcrumbSeparator /> : null}
+							<BreadcrumbItem>
+								{i === trail.length - 1 ? (
+									<BreadcrumbPage className="font-medium">{name}</BreadcrumbPage>
+								) : (
+									<BreadcrumbLink href={href(mapRoute({ group: group.id, grouping }))}>
+										{name}
+									</BreadcrumbLink>
+								)}
+							</BreadcrumbItem>
+						</Fragment>
+					);
+				})}
+			</BreadcrumbList>
+		</Breadcrumb>
+	);
+}
+
+/** A sample of a line as map.css draws it: plain, type-only, on a cycle, before the change. */
+function LineSample({ kind }: { kind?: "type" | "cycle" | "before" }) {
+	return (
+		<svg width="44" height="12" aria-hidden="true">
+			<g className={cn("imp-edge", kind && `is-${kind}`)}>
+				<path className="imp-line" d="M2 6h33" strokeWidth={2} />
+				<polygon className="imp-arrow" points="42,6 34,2 34,10" />
+			</g>
+		</svg>
+	);
+}
+
+function Legend() {
+	const row = "grid grid-cols-[44px_minmax(0,1fr)] items-center gap-3";
+	return (
+		<ul className="grid gap-2">
+			<li className={row}>
+				<LineSample />
+				{S.legendArrow}
+			</li>
+			<li className={row}>
+				<svg width="44" height="20" aria-hidden="true">
+					<g className="imp-edge">
+						<g className="imp-label" transform="translate(22 10)">
+							<CountLabel width={24}>12</CountLabel>
+						</g>
+					</g>
+				</svg>
+				{S.legendCount}
+			</li>
+			<li className={row}>
+				<LineSample kind="type" />
+				{S.legendTypes}
+			</li>
+			<li className={row}>
+				<LineSample kind="cycle" />
+				{S.legendCycle}
+			</li>
+			<li className={row}>
+				<LineSample kind="before" />
+				{S.legendBefore}
+			</li>
+			<li className={row}>
+				<span
+					className={cn("h-4 w-9 justify-self-center rounded-sm border", CONTEXT_CARD)}
+					aria-hidden="true"
+				/>
+				{S.legendContext}
+			</li>
+			<li className="grid grid-cols-2 gap-x-3 gap-y-1.5 border-t pt-2.5">
+				{STATUSES.map((status) => (
+					<span key={status} className="inline-flex items-center gap-1.5">
+						<StatusMark status={status} />
+						{S.status[status]}
+					</span>
+				))}
+			</li>
+		</ul>
+	);
+}
 
 interface Tip {
 	nodeId: string;
@@ -110,88 +286,8 @@ interface Tip {
 	lit: Rect[];
 }
 
-function Breadcrumb({ trail, grouping }: { trail: Group[]; grouping: Grouping }) {
-	const { href } = useAtlas();
-	return (
-		<nav className="breadcrumb" aria-label={S.mapTitle}>
-			{trail.map((group, i) => {
-				const last = i === trail.length - 1;
-				const text = group.kind === "root" ? S.overview : groupLabel(group);
-				const index = group.chapter ? `${group.chapter.index} ` : "";
-				return (
-					<span key={group.id || "root"} className="crumb">
-						{i > 0 ? (
-							<span className="crumb-sep" aria-hidden="true">
-								/
-							</span>
-						) : null}
-						{last ? (
-							<span className="crumb-current" aria-current="page">
-								{index}
-								{text}
-							</span>
-						) : (
-							<a href={href(mapRoute({ group: group.id, grouping }))}>
-								{index}
-								{text}
-							</a>
-						)}
-					</span>
-				);
-			})}
-		</nav>
-	);
-}
-
-function Legend() {
-	return (
-		<div className="map-legend" role="note" aria-label={S.legend}>
-			<div className="legend-row">
-				<svg width="44" height="12" aria-hidden="true">
-					<path d="M2 6h32" className="legend-line" />
-					<polygon points="42,6 33,1.5 33,10.5" className="legend-arrow" />
-				</svg>
-				<span>{S.legendArrow}</span>
-			</div>
-			<div className="legend-row">
-				<span className="legend-count num">12</span>
-				<span>{S.legendCount}</span>
-			</div>
-			<div className="legend-row">
-				<svg width="44" height="12" aria-hidden="true">
-					<path d="M2 6h40" className="legend-line is-type" />
-				</svg>
-				<span>{S.legendTypes}</span>
-			</div>
-			<div className="legend-row">
-				<svg width="44" height="12" aria-hidden="true">
-					<path d="M2 6h40" className="legend-line is-cycle" />
-				</svg>
-				<span>{S.legendCycle}</span>
-			</div>
-			<div className="legend-row">
-				<svg width="44" height="12" aria-hidden="true">
-					<path d="M2 6h40" className="legend-line is-before" />
-				</svg>
-				<span>{S.legendBefore}</span>
-			</div>
-			<div className="legend-row">
-				<span className="legend-context" />
-				<span>{S.legendContext}</span>
-			</div>
-			<div className="legend-row legend-status">
-				{(["added", "modified", "renamed", "deleted"] as const).map((s) => (
-					<span key={s} className={`legend-status-item st-${s}`}>
-						<i />
-						{S.status[s]}
-					</span>
-				))}
-			</div>
-		</div>
-	);
-}
-
-function Tooltip({
+/** What the hovered node imports and what imports it, placed where it covers the least of them. */
+function NodeTip({
 	tip,
 	level,
 	canvas,
@@ -219,18 +315,22 @@ function Tooltip({
 				{shown.map((r, i) => (
 					<span key={r.node.id}>
 						{i > 0 ? ", " : ""}
-						<b>{r.node.kind === "group" ? groupLabel(r.node.group) : baseName(r.node.file.path)}</b>
-						<span className="num"> ({r.count})</span>
+						<span className="font-medium">
+							{r.node.kind === "group" ? groupLabel(r.node.group) : baseName(r.node.file.path)}
+						</span>
+						<span className="text-muted-foreground tabular-nums"> ({fmt(r.count)})</span>
 					</span>
 				))}
-				{relations.length > 3 ? <span>, {S.tooltipMore(relations.length - 3)}</span> : null}
+				{relations.length > 3 ? (
+					<span className="text-muted-foreground">, {S.tooltipMore(relations.length - 3)}</span>
+				) : null}
 			</>
 		);
 	};
 	return (
 		<div
 			ref={ref}
-			className="map-tip"
+			className="pointer-events-none absolute z-20 grid w-80 gap-1 rounded-lg border bg-popover px-3 py-2.5 text-xs text-popover-foreground shadow-md"
 			style={
 				position
 					? { left: position.left, top: position.top }
@@ -238,26 +338,33 @@ function Tooltip({
 			}
 			role="tooltip"
 		>
-			<div className="map-tip-title">{nodeLabel(node)}</div>
+			{/* A path wraps after a slash where it can, so a file name stays in one piece. */}
+			<div className="text-sm font-medium wrap-anywhere">
+				{nodeLabel(node).replaceAll("/", "/\u200b")}
+			</div>
 			{imports.length === 0 && importedBy.length === 0 ? (
-				<div className="map-tip-row">{S.tooltipNone}</div>
+				<div className="text-muted-foreground">{S.tooltipNone}</div>
 			) : null}
 			{imports.length > 0 ? (
-				<div className="map-tip-row">
-					<span className="map-tip-key">{S.tooltipImports}</span> {list(imports)}
+				<div>
+					<span className="text-muted-foreground">{S.tooltipImports}</span> {list(imports)}
 				</div>
 			) : null}
 			{importedBy.length > 0 ? (
-				<div className="map-tip-row">
-					<span className="map-tip-key">{S.tooltipImportedBy}</span> {list(importedBy)}
+				<div>
+					<span className="text-muted-foreground">{S.tooltipImportedBy}</span> {list(importedBy)}
 				</div>
 			) : null}
-			<div className="map-tip-hint">
+			<div className="mt-0.5 text-muted-foreground">
 				{node.kind === "group" ? S.tooltipOpenGroup : S.tooltipOpenFile}
 			</div>
 		</div>
 	);
 }
+
+// ---------------------------------------------------------------------------------------------
+// The viewport
+// ---------------------------------------------------------------------------------------------
 
 /**
  * The first view: as much as fits while the text stays readable; the "Grundlagen" side first.
@@ -329,16 +436,36 @@ function useSize(ref: RefObject<HTMLElement | null>): { width: number; height: n
 	return size;
 }
 
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * A control floating on the canvas stands on the page's colour: the outline controls are
+ * translucent in the dark theme, and the lines of the map would show through them.
+ */
+const ON_CANVAS = "rounded-md bg-background";
+
+/**
+ * What a screen reader hears on a node, in place of React Flow's English text about selecting,
+ * moving and deleting (none of which a node here does). React Flow reads one key or the other,
+ * depending on its own keyboard handling.
+ */
+const ARIA_LABELS = {
+	"node.a11yDescription.default": S.nodeKeys,
+	"node.a11yDescription.keyboardDisabled": S.nodeKeys,
+};
+
 function MapCanvas({ route }: { route: Route }) {
 	const atlas = useAtlas();
 	const { meta, visible, model, viewed, go } = atlas;
 	const params = readMapParams(route);
+	const theme = useResolvedTheme();
 	const [direction, setDirection] = useChoice<Direction>("map-direction", ["ltr", "rtl"], "ltr");
 	const [legend, setLegend] = useFlag("map-legend", false);
 	const [hoverState, setHovered] = useState<Tip | null>(null);
 	const wrapper = useRef<HTMLDivElement>(null);
 	const size = useSize(wrapper);
 	const flow = useReactFlow<MapFlowNode, ImportFlowEdge>();
+	const directionHint = useId();
 
 	const visibleEdges = useMemo(() => {
 		const paths = new Set(visible.map((f) => f.path));
@@ -370,7 +497,7 @@ function MapCanvas({ route }: { route: Route }) {
 										? `${node.group.chapter.index} ${groupLabel(node.group)}`
 										: groupLabel(node.group),
 								index: node.group.chapter ? String(node.group.chapter.index) : "",
-								count: String(node.group.all.length),
+								count: fmt(node.group.all.length),
 							}
 						: {
 								node,
@@ -425,8 +552,6 @@ function MapCanvas({ route }: { route: Route }) {
 		for (const node of level.nodes) {
 			const box = layout.boxes.get(node.id);
 			if (!box) continue;
-			const state = lit ? (lit.nodes.has(node.id) ? " is-lit" : " is-dim") : "";
-			const focus = node.id === focusId ? " is-focus" : "";
 			const text = labels.get(node.id)?.text ?? nodeLabel(node);
 			const common = {
 				id: node.id,
@@ -434,7 +559,12 @@ function MapCanvas({ route }: { route: Route }) {
 				width: box.width,
 				height: box.height,
 				style: { width: box.width, height: box.height },
-				className: `${node.context ? "is-context-node" : ""}${state}${focus}`,
+				// What the cards, map.css and the minimap go by.
+				className: cn(
+					NODE_WRAPPER,
+					node.context && "is-context-node",
+					lit && (lit.nodes.has(node.id) ? "is-lit" : "is-dim"),
+				),
 				draggable: false,
 			};
 			if (node.kind === "group")
@@ -460,6 +590,7 @@ function MapCanvas({ route }: { route: Route }) {
 						hint: fileHint(node.file.path, group, node.context),
 						name: text,
 						context: node.context,
+						focus: node.id === focusId,
 					},
 				});
 		}
@@ -468,7 +599,7 @@ function MapCanvas({ route }: { route: Route }) {
 
 	const edges = useMemo(() => {
 		const list: ImportFlowEdge[] = [];
-		const state = (id: string) => (lit ? (lit.edges.has(id) ? " is-lit" : " is-dim") : "");
+		const state = (id: string) => (lit ? (lit.edges.has(id) ? "is-lit" : "is-dim") : "");
 		for (const [kind, set] of [
 			["inner", drawing.inner],
 			["detail", drawing.details],
@@ -550,10 +681,23 @@ function MapCanvas({ route }: { route: Route }) {
 		[layout, direction, focusId, floor],
 	);
 
-	const onNodeClick: NodeMouseHandler<MapFlowNode> = (_, node) => {
+	/** A group opens one level deeper, a file opens its page. */
+	const open = (node: MapFlowNode) => {
 		if (node.type === "atlas-group")
 			go(mapRoute({ group: node.data.group.id, grouping: params.grouping }));
 		else if (node.type === "file") go(fileRoute({ path: node.data.file.path }));
+	};
+	const onNodeClick: NodeMouseHandler<MapFlowNode> = (_, node) => open(node);
+	// The same from the keyboard: React Flow makes its wrapper of a node a tab stop (`data-id` is
+	// the node's id) but leaves Enter and Space to the app when nodes cannot be selected.
+	const onKeyDown = (event: KeyboardEvent) => {
+		if (event.key !== "Enter" && event.key !== " ") return;
+		const el = event.target;
+		if (!(el instanceof HTMLElement) || !el.classList.contains("react-flow__node")) return;
+		const node = nodes.find((n) => n.id === el.dataset.id);
+		if (!node) return;
+		event.preventDefault();
+		open(node);
 	};
 	const onNodeEnter: NodeMouseHandler<MapFlowNode> = (event, node) => {
 		if (node.type === "frame") return;
@@ -585,101 +729,140 @@ function MapCanvas({ route }: { route: Route }) {
 			lit: litRects,
 		});
 	};
+	const fit = () => {
+		const el = wrapper.current;
+		if (!el) return;
+		const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+		flow.setViewport(fitViewport(layout.bounds, el.clientWidth, el.clientHeight, tooLarge), {
+			duration: still ? 0 : 250,
+		});
+	};
+
+	const canvasProps = {
+		// A tint under the cards; in the dark theme that tint would all but match the cards' own
+		// colour, so there the canvas stays the page's.
+		className: "relative min-h-0 flex-1 overflow-hidden bg-muted/40 dark:bg-background",
+		ref: wrapper,
+		"data-testid": "map",
+		"data-level": group.id,
+	};
+	// Nothing to draw: say why, and leave out the controls that would act on nothing.
+	if (level.nodes.length === 0)
+		return (
+			<div {...canvasProps}>
+				<Empty className="h-full">
+					<EmptyHeader>
+						<EmptyTitle>{visible.length === 0 ? S.mapEmpty : S.emptyLevel}</EmptyTitle>
+						<EmptyDescription>{S.noVisibleFilesHint}</EmptyDescription>
+					</EmptyHeader>
+				</Empty>
+			</div>
+		);
 
 	return (
-		<div className="map-canvas" ref={wrapper} data-testid="map" data-level={group.id}>
-			{level.nodes.length === 0 ? (
-				<div className="state">
-					<p>{visible.length === 0 ? S.mapEmpty : S.emptyLevel}</p>
+		<div {...canvasProps}>
+			{/* Before the drawing in the document, as on the screen: Tab reaches them before the nodes. */}
+			<div className="absolute top-3 right-3 z-10 flex items-center gap-2">
+				<div className={ON_CANVAS}>
+					<Tooltip>
+						<TooltipTrigger render={<Button variant="outline" size="sm" onClick={fit} />}>
+							<MaximizeIcon data-icon="inline-start" aria-hidden="true" />
+							{S.fit}
+						</TooltipTrigger>
+						<TooltipContent side="bottom">{S.fitTitle}</TooltipContent>
+					</Tooltip>
 				</div>
-			) : (
-				<ReactFlow<MapFlowNode, ImportFlowEdge>
-					key={`${params.grouping}|${group.id}|${direction}|${visible.length}`}
-					nodes={nodes}
-					edges={edges}
-					nodeTypes={NODE_TYPES}
-					edgeTypes={EDGE_TYPES}
-					onInit={applyFirstView}
-					onNodeClick={onNodeClick}
-					onNodeMouseEnter={onNodeEnter}
-					onNodeMouseLeave={() => setHovered(null)}
-					onMoveStart={() => setHovered(null)}
-					onMoveEnd={(_, viewport) => rememberViewport(viewport)}
-					nodesDraggable={false}
-					nodesConnectable={false}
-					elementsSelectable={false}
-					edgesFocusable={false}
-					minZoom={0.15}
-					maxZoom={2}
-					proOptions={{ hideAttribution: true }}
-				>
-					{tooLarge ? (
-						<MiniMap<MapFlowNode>
-							pannable
-							zoomable
-							className="map-minimap"
-							nodeClassName={(n) =>
-								n.type === "frame"
-									? "mm-frame"
-									: n.className?.includes("is-context-node")
-										? "mm-context"
-										: "mm-node"
-							}
-						/>
-					) : null}
-				</ReactFlow>
-			)}
-			<div className="map-controls">
-				<button
-					type="button"
-					className="btn"
-					onClick={() => {
-						const el = wrapper.current;
-						if (!el) return;
-						flow.setViewport(
-							fitViewport(layout.bounds, el.clientWidth, el.clientHeight, tooLarge),
-							{ duration: 250 },
-						);
-					}}
-					title={S.fitTitle}
-				>
-					<Icon name="fit" />
-					{S.fit}
-				</button>
-				<fieldset className="segmented" aria-label={S.directionLabel} title={S.directionTitle}>
-					<button
-						type="button"
-						aria-pressed={direction === "ltr"}
-						onClick={() => setDirection("ltr")}
+				<Tooltip>
+					<TooltipTrigger
+						render={
+							<Choice
+								value={direction}
+								options={DIRECTIONS}
+								onChange={setDirection}
+								className={ON_CANVAS}
+								aria-label={S.directionLabel}
+								aria-describedby={directionHint}
+							/>
+						}
+					/>
+					<TooltipContent side="bottom">{S.directionTitle}</TooltipContent>
+				</Tooltip>
+				{/* The tooltip is for the eye only; a screen reader gets the same as the group's description. */}
+				<span id={directionHint} className="sr-only">
+					{S.directionTitle}
+				</span>
+				<div className={ON_CANVAS}>
+					{/*
+					 * Open until its button or Esc closes it, and remembered: it is read next to the map
+					 * while the map is panned and its nodes are pressed, which would close a plain popover.
+					 */}
+					<Popover
+						open={legend}
+						onOpenChange={(next, details) => {
+							if (next || details.reason === "trigger-press" || details.reason === "escape-key")
+								setLegend(next);
+						}}
 					>
-						{S.directionLtr}
-					</button>
-					<button
-						type="button"
-						aria-pressed={direction === "rtl"}
-						onClick={() => setDirection("rtl")}
-					>
-						{S.directionRtl}
-					</button>
-				</fieldset>
-				<button
-					type="button"
-					className="btn"
-					aria-pressed={legend}
-					onClick={() => setLegend(!legend)}
-				>
-					<Icon name="legend" />
-					{S.legend}
-				</button>
+						<PopoverTrigger render={<Button variant="outline" size="sm" />}>
+							<InfoIcon data-icon="inline-start" aria-hidden="true" />
+							{S.legend}
+						</PopoverTrigger>
+						<PopoverContent align="end" className="w-80 p-3" aria-label={S.legend}>
+							<Legend />
+						</PopoverContent>
+					</Popover>
+				</div>
 			</div>
-			{legend ? <Legend /> : null}
+			<ReactFlow<MapFlowNode, ImportFlowEdge>
+				key={`${params.grouping}|${group.id}|${direction}|${visible.length}`}
+				nodes={nodes}
+				edges={edges}
+				nodeTypes={NODE_TYPES}
+				edgeTypes={EDGE_TYPES}
+				onInit={applyFirstView}
+				onNodeClick={onNodeClick}
+				onNodeMouseEnter={onNodeEnter}
+				onNodeMouseLeave={() => setHovered(null)}
+				onMoveStart={() => setHovered(null)}
+				onMoveEnd={(_, viewport) => rememberViewport(viewport)}
+				onKeyDown={onKeyDown}
+				nodesDraggable={false}
+				nodesConnectable={false}
+				elementsSelectable={false}
+				edgesFocusable={false}
+				minZoom={0.15}
+				maxZoom={2}
+				proOptions={{ hideAttribution: true }}
+				// An explicit light or dark choice wins over the system's scheme.
+				forceColorMode={theme}
+				className="bg-transparent"
+				aria-label={S.mapTitle}
+				ariaLabelConfig={ARIA_LABELS}
+			>
+				{tooLarge ? (
+					<MiniMap<MapFlowNode>
+						pannable
+						zoomable
+						ariaLabel={S.minimap}
+						className="overflow-hidden rounded-lg border bg-card shadow-sm"
+						nodeClassName={(n) =>
+							n.type === "frame"
+								? "mm-frame"
+								: n.className?.includes("is-context-node")
+									? "mm-context"
+									: "mm-node"
+						}
+					/>
+				) : null}
+			</ReactFlow>
+			{/* On a veil of the page's colour: on a level that is cut, nodes lie under the note. */}
 			{level.hiddenContext > 0 || tooLarge ? (
-				<div className="map-note">
+				<div className="pointer-events-none absolute bottom-2 left-1 z-10 grid gap-0.5 rounded-md bg-background/90 px-2 py-1 text-xs text-muted-foreground">
 					{tooLarge ? <span>{S.mapCut}</span> : null}
 					{level.hiddenContext > 0 ? <span>{S.contextHidden(level.hiddenContext)}</span> : null}
 				</div>
 			) : null}
-			{hovered ? <Tooltip tip={hovered} level={level} canvas={size} /> : null}
+			{hovered ? <NodeTip tip={hovered} level={level} canvas={size} /> : null}
 		</div>
 	);
 }
@@ -692,31 +875,24 @@ export function MapView({ route }: { route: Route }) {
 		[visible, params.grouping, meta],
 	);
 	const group = locateGroup(tree, params.group);
-	const setGrouping = (grouping: Grouping) => go(mapRoute({ group: "", grouping }));
+	const groupingLabel = useId();
 	// The file page's "Auf der Karte zeigen" opens the grouping last used here.
 	useEffect(() => writeStored("map-grouping", params.grouping), [params.grouping]);
 	return (
-		<div className="map-view">
-			<div className="map-bar">
-				<Breadcrumb trail={trail(group)} grouping={params.grouping} />
-				<span className="map-bar-spacer" />
-				<span className="map-bar-label">{S.groupingLabel}</span>
-				<fieldset className="segmented" aria-label={S.groupingLabel}>
-					<button
-						type="button"
-						aria-pressed={params.grouping === "chapters"}
-						onClick={() => setGrouping("chapters")}
-					>
-						{S.groupingChapters}
-					</button>
-					<button
-						type="button"
-						aria-pressed={params.grouping === "dirs"}
-						onClick={() => setGrouping("dirs")}
-					>
-						{S.groupingDirs}
-					</button>
-				</fieldset>
+		<div className="flex h-full flex-col bg-background">
+			<div className="flex min-h-12 shrink-0 items-center gap-3 border-b px-3 py-1.5">
+				<Trail trail={trail(group)} grouping={params.grouping} />
+				<div className="ml-auto flex shrink-0 items-center gap-2">
+					<span id={groupingLabel} className="text-xs text-muted-foreground">
+						{S.groupingLabel}
+					</span>
+					<Choice
+						value={params.grouping}
+						options={GROUPINGS}
+						onChange={(grouping) => go(mapRoute({ group: "", grouping }))}
+						aria-labelledby={groupingLabel}
+					/>
+				</div>
 			</div>
 			<ReactFlowProvider key={model.range.head.sha}>
 				<MapCanvas route={route} />

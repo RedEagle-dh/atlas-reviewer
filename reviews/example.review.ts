@@ -1,13 +1,14 @@
 /**
- * A template. Copy it, point `repo` at a checkout, and adjust ranges and chapters:
+ * A template. Copy it, and in the copy change the import below to `../../src/core/define` (the
+ * copy lies one directory deeper), point `repo` at a checkout, and adjust ranges and chapters:
  *
+ *   mkdir -p reviews/local
  *   cp reviews/example.review.ts reviews/local/my-branch.review.ts
  *   bun run atlas:check reviews/local/my-branch.review.ts
  *   bun run atlas reviews/local/my-branch.review.ts
  *
  * `reviews/local/` is git-ignored: a review file names a local path and describes a project's
- * layout, which does not belong in this repository when the project is private. Mind the import
- * path below when you move the file one directory down (`../../src/core/define`).
+ * layout, which does not belong in this repository when the project is private.
  */
 import { defineReview } from "../src/core/define";
 

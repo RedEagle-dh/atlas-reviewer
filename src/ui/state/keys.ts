@@ -1,7 +1,8 @@
 /** Single-key shortcuts (`j`, `k`, `v`, `n`, `p`, …) that stay out of the way of text fields. */
 import { useEffect, useRef } from "react";
 
-function typingInto(target: EventTarget | null): boolean {
+/** A text field has the focus: a key is a character there, not a shortcut. */
+export function typingInto(target: EventTarget | null): boolean {
 	if (!(target instanceof HTMLElement)) return false;
 	return (
 		target.isContentEditable ||
@@ -10,6 +11,9 @@ function typingInto(target: EventTarget | null): boolean {
 		target instanceof HTMLSelectElement
 	);
 }
+
+/** An open dialog, sheet or command palette (Base UI popups): the page behind takes no keys. */
+const MODAL_OPEN = '[role="dialog"], [role="alertdialog"]';
 
 /**
  * Calls `bindings[event.key]` on a plain key press (no Ctrl, Alt or Meta) outside text fields.
@@ -23,7 +27,7 @@ export function useKeys(bindings: Readonly<Record<string, () => void>>, enabled 
 		const onKey = (event: KeyboardEvent) => {
 			if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
 			if (typingInto(event.target)) return;
-			if (document.querySelector("[data-modal-open]")) return;
+			if (document.querySelector(MODAL_OPEN)) return;
 			const action = latest.current[event.key];
 			if (!action) return;
 			event.preventDefault();

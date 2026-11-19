@@ -73,6 +73,16 @@ export interface RangeBuild {
 	timings: BuildTimings;
 }
 
+/**
+ * The commit a path of the range is read from: head, or base for a deleted file. `null` when the
+ * path is no file of the head commit and no deleted file of the base. Decided from the commits'
+ * file lists alone, so no path, however it is spelled, reaches the disk.
+ */
+export function sourceOf(build: RangeBuild, path: string): RepoSource | null {
+	const source = build.diff.get(path)?.status === "deleted" ? build.base : build.head;
+	return source.has(path) ? source : null;
+}
+
 export interface BuildTimings {
 	refs: number;
 	list: number;

@@ -3,6 +3,8 @@
  * review-atlas serve <review-file> [--port 4610] [--host 127.0.0.1] [--range <id>] [--open] [--dev]
  * review-atlas check <review-file> [--range <id>] [--cold]
  */
+import { realpathSync } from "node:fs";
+import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { RangeBuild } from "../src/core/build";
 import { loadReview, REST_CHAPTER_ID, type Review } from "../src/core/define";
@@ -22,10 +24,41 @@ const USAGE = `usage:
           unresolved (except those the review lists in expectedUnresolved)
   --cold  check: ignore the extraction cache on the first build (the second build reads it)`;
 
+/** What ends `serve`: Ctrl-C, a plain `kill`, the terminal that goes away. */
+const STOP_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
+
+/**
+ * The tool's directory: its `bunfig.toml` registers the Tailwind plugin of the UI bundle. The
+ * real path, as the working directory of a process is one: reached through a link, the two
+ * would otherwise never be equal, and `serve` would start itself again without end.
+ */
+const TOOL_DIR = realpathSync(resolve(import.meta.dir, ".."));
+
+/**
+ * Bun reads `bunfig.toml` from the working directory when the process starts, and without it
+ * the page is served unstyled. So `serve`, started from elsewhere, runs itself again from the
+ * tool's directory (the review file made absolute first).
+ */
+async function serveFromToolDir(argv: string[], fileAt: number): Promise<number> {
+	const args = argv.map((arg, i) => (i === fileAt ? resolve(arg) : arg));
+	const child = Bun.spawn([process.execPath, import.meta.path, ...args], {
+		cwd: TOOL_DIR,
+		stdin: "inherit",
+		stdout: "inherit",
+		stderr: "inherit",
+	});
+	// Whatever asks this process to stop is passed on, and its end is the server's end. From a
+	// terminal the server gets the signal a second time, by itself: it stops once (see `serve`).
+	// Only a SIGKILL of this process cannot be passed on.
+	for (const signal of STOP_SIGNALS) process.on(signal, () => child.kill(signal));
+	return child.exited;
+}
+
 async function main(argv: string[]): Promise<number> {
-	const { values, positionals } = parseArgs({
+	const { values, positionals, tokens } = parseArgs({
 		args: argv,
 		allowPositionals: true,
+		tokens: true,
 		options: {
 			port: { type: "string" },
 			host: { type: "string" },
@@ -40,6 +73,10 @@ async function main(argv: string[]): Promise<number> {
 	if (values.help || !command || !file || (command !== "serve" && command !== "check")) {
 		console.log(USAGE);
 		return values.help ? 0 : 2;
+	}
+	if (command === "serve" && realpathSync(process.cwd()) !== TOOL_DIR) {
+		const fileAt = tokens.filter((t) => t.kind === "positional")[1]?.index;
+		if (fileAt !== undefined) return serveFromToolDir(argv, fileAt);
 	}
 	const review = await loadReview(file);
 	if (values.range !== undefined && !review.ranges.some((r) => r.id === values.range)) {
@@ -103,10 +140,11 @@ async function serve(
 			console.log(`(could not run ${opener}; open the URL yourself)`);
 		}
 	}
+	// `on`, not `once`: a signal can come twice (from the terminal, and passed on by the process
+	// that started this one from another directory), and the second must not end the process
+	// while the server is still closing.
 	await new Promise<void>((resolve) => {
-		const stop = () => resolve();
-		process.once("SIGINT", stop);
-		process.once("SIGTERM", stop);
+		for (const signal of STOP_SIGNALS) process.on(signal, () => resolve());
 	});
 	await running.stop();
 	return 0;
