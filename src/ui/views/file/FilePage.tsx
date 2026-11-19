@@ -51,7 +51,12 @@ import { placeComments } from "../../lib/threads";
 import { fileRoute, type Grouping, mapRoute, type Route, readFileParams } from "../../router";
 import { isRangeMoved, useAtlas } from "../../state/atlas";
 import { useComments } from "../../state/comments";
-import { type Composer as ComposerState, composers, useComposer } from "../../state/composer";
+import {
+	type Composer as ComposerState,
+	composers,
+	pageEdits,
+	useComposer,
+} from "../../state/composer";
 import { useKeys } from "../../state/keys";
 import { useChoice, useFlag } from "../../state/prefs";
 import { useResource } from "../../state/resource";
@@ -163,6 +168,7 @@ function FileComments({
 					<CommentCard
 						key={comment.id}
 						comment={comment}
+						edits={pageEdits}
 						// On lines, and listed here: the lines are gone.
 						outdated={comment.line !== undefined && "gone"}
 						fallbackFocus="[data-comment-file]"

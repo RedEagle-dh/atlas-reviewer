@@ -96,8 +96,9 @@ describe("readCommentDraft", () => {
 			"`snippet` must be at most 8000 characters",
 		);
 		expect(problem({ ...ok, range: 3 })).toBe("`range` must be a string");
-		for (const head of [3, null, ["f00"]])
-			expect(problem({ ...ok, head })).toBe("`head` must be a string");
+		// An empty `head` is no commit: "none" is said by leaving the field out.
+		for (const head of [3, null, ["f00"], ""])
+			expect(problem({ ...ok, head })).toBe("`head` must be a non-empty string");
 	});
 
 	test("the limits are inclusive, and the text is measured after trimming", () => {

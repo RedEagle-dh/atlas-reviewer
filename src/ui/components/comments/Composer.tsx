@@ -6,7 +6,7 @@
 import { flushSync } from "react-dom";
 import type { TokenLine } from "../../../core/types";
 import { snippetOf } from "../../lib/comments";
-import { useComments } from "../../state/comments";
+import { useCommentActions } from "../../state/comments";
 import { type Composer as ComposerState, composers } from "../../state/composer";
 import { S } from "../../strings";
 import { CommentEditor } from "./CommentEditor";
@@ -70,7 +70,7 @@ export function Composer({
 	/** The file's lines as the page shows them: the comment quotes its own. */
 	lines: readonly TokenLine[];
 }) {
-	const { add, failure } = useComments();
+	const { add, failure } = useCommentActions();
 	const { line, endLine, memory } = composer;
 
 	const save = async (text: string): Promise<string | null> => {
@@ -82,7 +82,7 @@ export function Composer({
 		if (!created) {
 			const why = failure();
 			// Kept with the text: when the range has moved, the page is about to be built anew.
-			memory.problem = why?.moved ? S.commentMoved : S.commentNotSaved(why?.message ?? "");
+			memory.problem = why?.moved ? S.commentMoved : S.commentNotSaved(S.whyFailed(why));
 			return memory.problem;
 		}
 		composers.close(path);

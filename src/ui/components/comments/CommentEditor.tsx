@@ -28,6 +28,7 @@ export function CommentEditor({
 	endLine,
 	mode,
 	initial = "",
+	draft,
 	problem: firstProblem = null,
 	autoFocus = false,
 	onSubmit,
@@ -40,6 +41,8 @@ export function CommentEditor({
 	/** `new`: empty means nothing to lose. `edit`: unchanged means nothing to lose. */
 	mode: "new" | "edit";
 	initial?: string;
+	/** `edit` only: the text as far as it was changed when this editor was last taken away. */
+	draft?: string;
 	/** What to say next to the buttons from the start (a save that failed before the page was built anew). */
 	problem?: string | null;
 	/**
@@ -54,7 +57,7 @@ export function CommentEditor({
 	/** Every change of the text, for whoever keeps it beyond this editor's life. */
 	onText?: (text: string) => void;
 }) {
-	const [text, setText] = useState(initial);
+	const [text, setText] = useState(draft ?? initial);
 	const [saving, setSaving] = useState(false);
 	const [problem, setProblem] = useState(firstProblem);
 	const [escPressed, setEscPressed] = useState(false);

@@ -25,6 +25,9 @@ const CATEGORY_WORDS: Readonly<Record<string, string>> = {
 	other: "Sonstiges",
 };
 
+/** The end of "Nicht gespeichert: …" when the range has new commits; said in two places. */
+const RANGE_MOVED = "der Code hat sich geändert (neue Commits).";
+
 export const S = {
 	loading: "Lade …",
 	loadingFile: (name: string) => `Lade ${name} …`,
@@ -255,11 +258,25 @@ export const S = {
 	commentDelete: "Löschen",
 	commentDeleted: "Kommentar gelöscht",
 	undo: "Rückgängig",
-	commentNotSaved: (message: string) => `Nicht gespeichert: ${message}`,
-	commentNotDeleted: (message: string) => `Nicht gelöscht: ${message}`,
-	commentNotRestored: (message: string) => `Nicht wiederhergestellt: ${message}`,
-	commentMoved:
-		"Nicht gespeichert: der Code hat sich geändert (neue Commits). Stelle prüfen und erneut senden.",
+	/** These three are followed by why: `whyFailed`. */
+	commentNotSaved: (why: string) => `Nicht gespeichert: ${why}`,
+	commentNotDeleted: (why: string) => `Nicht gelöscht: ${why}`,
+	commentNotRestored: (why: string) => `Nicht wiederhergestellt: ${why}`,
+	/**
+	 * Why a request about a comment failed: in the reader's words when the range has moved on or
+	 * no answer came at all (the browser's own word for that is "Failed to fetch"), else what the
+	 * server said.
+	 */
+	whyFailed: (failure: { message: string; moved: boolean; answered: boolean } | null) =>
+		failure === null
+			? ""
+			: failure.moved
+				? RANGE_MOVED
+				: failure.answered
+					? failure.message
+					: "der Server antwortet nicht. Läuft er noch?",
+	/** A new comment that was refused because of it: the composer keeps the text. */
+	commentMoved: `Nicht gespeichert: ${RANGE_MOVED} Stelle prüfen und erneut senden.`,
 	/** Esc is pressed in a field that holds text: why nothing happened. */
 	escKeepsText: "Esc schließt nur ein leeres Feld. „Abbrechen“ verwirft den Text.",
 	escKeepsEdit: "Esc schließt nur ohne Änderung. „Abbrechen“ verwirft sie.",

@@ -540,16 +540,18 @@ describe("handlers", () => {
 		]);
 		expect(refused.cache).toBe("no-store");
 		// Whatever is not the range's head is a state the range is not in: a short sha, another word.
-		for (const shown of [head.slice(0, 10), "HEAD", ""])
+		for (const shown of [head.slice(0, 10), "HEAD", head.toUpperCase()])
 			expect(
 				errorOf(await answerOf(api.addComment(post({ ...draft, head: shown })))).slice(0, 2),
 			).toEqual([409, "range-moved"]);
-		// A malformed draft is a bad request first; an unknown range is unknown, moved or not.
-		expect(errorOf(await answerOf(api.addComment(post({ ...draft, head: 7 }))))).toEqual([
-			400,
-			"bad-request",
-			"`head` must be a string",
-		]);
+		// A malformed draft is a bad request first (an empty `head` names no state at all); an
+		// unknown range is unknown, moved or not.
+		for (const shown of [7, ""])
+			expect(errorOf(await answerOf(api.addComment(post({ ...draft, head: shown }))))).toEqual([
+				400,
+				"bad-request",
+				"`head` must be a non-empty string",
+			]);
 		expect(
 			errorOf(await answerOf(api.addComment(post({ ...draft, text: "", head: firstHead })))),
 		).toEqual([400, "bad-request", "`text` must not be empty"]);

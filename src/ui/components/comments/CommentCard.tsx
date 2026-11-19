@@ -10,7 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ReviewComment } from "../../../core/types";
-import { useComments } from "../../state/comments";
+import { useCommentActions } from "../../state/comments";
+import type { Edits } from "../../state/composer";
 import { S } from "../../strings";
 import { CommentEditor } from "./CommentEditor";
 
@@ -32,6 +33,7 @@ function neighbourOf(card: HTMLElement): HTMLElement | null {
 
 export const CommentCard = memo(function CommentCard({
 	comment,
+	edits,
 	outdated = false,
 	placeHref,
 	onFollow,
@@ -39,6 +41,11 @@ export const CommentCard = memo(function CommentCard({
 	fallbackFocus,
 }: {
 	comment: ReviewComment;
+	/**
+	 * Where the card keeps a changed text until it is saved or dropped (`pageEdits` or
+	 * `panelEdits`): a card that finds its comment there goes on with that edit.
+	 */
+	edits: Edits;
 	/** The code under the comment reads differently now (`changed`) or its lines are gone (`gone`). */
 	outdated?: false | "changed" | "gone";
 	/** The place as a link to its line (the panel); without it the place is plain text. */
@@ -56,17 +63,20 @@ export const CommentCard = memo(function CommentCard({
 	 */
 	fallbackFocus?: string;
 }) {
-	const { add, edit, remove, failure } = useComments();
-	const [editing, setEditing] = useState(false);
-	const card = useRef<HTMLElement>(null);
-	const editButton = useRef<HTMLButtonElement>(null);
+	const { add, edit, remove, failure } = useCommentActions();
 	const { id, line, endLine } = comment;
+	// `resumed`: the card was taken away in the middle of an edit and is back (see `Edits`).
+	const [editing, setEditing] = useState<false | "opened" | "resumed">(() =>
+		edits.has(id) ? "resumed" : false,
+	);
+	const card = useRef<HTMLElement>(null);
+	const deleteButton = useRef<HTMLButtonElement>(null);
 
 	// Writes the same comment again; the server gives it a new id and puts it last.
 	const restore = async () => {
 		const { path, snippet, text } = comment;
 		if (await add({ path, line, endLine, snippet, text })) return;
-		toast.error(S.commentNotRestored(failure()?.message ?? ""), {
+		toast.error(S.commentNotRestored(S.whyFailed(failure())), {
 			action: { label: S.retry, onClick: restore },
 		});
 	};
@@ -75,25 +85,33 @@ export const CommentCard = memo(function CommentCard({
 		const next =
 			(card.current && neighbourOf(card.current)) ??
 			(fallbackFocus ? document.querySelector<HTMLElement>(fallbackFocus) : null);
+		// The focus moves on before the card goes, not after it. When the element that has the
+		// focus is removed, a dialog around it (the panel) takes the focus itself a frame later,
+		// over whatever was focused meanwhile: the reader would lose their place in the list.
+		next?.focus();
 		if (!(await remove(id))) {
-			toast.error(S.commentNotDeleted(failure()?.message ?? ""));
+			deleteButton.current?.focus();
+			toast.error(S.commentNotDeleted(S.whyFailed(failure())));
 			return;
 		}
-		// The card is gone, and the focus with it: on to its neighbour instead of nowhere.
-		next?.focus();
+		edits.delete(id);
 		toast(S.commentDeleted, { duration: UNDO_MS, action: { label: S.undo, onClick: restore } });
 	};
 
 	const closeEditor = () => {
+		edits.delete(id);
+		// The card takes the focus, before the field goes (see `onDelete`): as after a new comment,
+		// a screen reader reads the comment as it now is, and Tab goes on to its actions. Not the
+		// button that opened the editor: for a keyboard its tooltip would open, and in the panel the
+		// next Esc would close that tooltip instead of the panel.
+		card.current?.focus();
 		setEditing(false);
-		// After the editor is gone and the button is back.
-		requestAnimationFrame(() => editButton.current?.focus());
 	};
 
 	const onSave = async (text: string): Promise<string | null> => {
 		// The same text: nothing to send.
 		if (text !== comment.text && !(await edit(id, text)))
-			return S.commentNotSaved(failure()?.message ?? "");
+			return S.commentNotSaved(S.whyFailed(failure()));
 		closeEditor();
 		return null;
 	};
@@ -130,9 +148,17 @@ export const CommentCard = memo(function CommentCard({
 						line={line}
 						endLine={endLine}
 						initial={comment.text}
-						autoFocus
+						draft={edits.get(id)}
+						// Not when the edit is resumed: the reader is somewhere else by now, and the
+						// focus would scroll the page back here.
+						autoFocus={editing === "opened"}
 						onSubmit={onSave}
 						onCancel={closeEditor}
+						// Only a text that differs is worth going on with.
+						onText={(text) => {
+							if (text === comment.text) edits.delete(id);
+							else edits.set(id, text);
+						}}
 					/>
 				</div>
 			) : (
@@ -182,12 +208,11 @@ export const CommentCard = memo(function CommentCard({
 								<TooltipTrigger
 									render={
 										<Button
-											ref={editButton}
 											variant="ghost"
 											size="icon-sm"
 											className="text-muted-foreground"
 											aria-label={S.commentEdit}
-											onClick={() => setEditing(true)}
+											onClick={() => setEditing("opened")}
 										/>
 									}
 								>
@@ -199,6 +224,7 @@ export const CommentCard = memo(function CommentCard({
 								<TooltipTrigger
 									render={
 										<Button
+											ref={deleteButton}
 											variant="ghost"
 											size="icon-sm"
 											className="text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20"

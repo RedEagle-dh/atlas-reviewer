@@ -2,9 +2,26 @@
  * The comment that is being written on a file page (its "composer"): where it goes, and what is
  * typed so far. One per file, and kept outside the page's components, because a file page is
  * built anew when the range gets new commits or the reader looks at another file and comes back:
- * what is typed must still be there then.
+ * what is typed must still be there then. The same holds for a saved comment whose text is being
+ * changed (`Edits`).
  */
 import { useSyncExternalStore } from "react";
+
+/**
+ * The changed, not yet saved texts of saved comments, by comment id. A card reads its entry when
+ * it appears and goes on with that edit. A card is taken away and built anew more often than it
+ * looks: below a line of code whenever its row moves to another chunk of rows (a fold opens above
+ * it, the view switches to "Nur Änderungen"), with the page, and in the panel when the reader
+ * looks at the prompt.
+ */
+export type Edits = Map<string, string>;
+
+/**
+ * One memory per place a comment's card can be in, so an edit begun in the panel does not open
+ * an editor in the card of the same comment on the page behind it.
+ */
+export const pageEdits: Edits = new Map();
+export const panelEdits: Edits = new Map();
 
 /** The lines a composer is for; neither: the whole file. */
 export interface ComposerPlace {

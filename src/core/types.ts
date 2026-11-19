@@ -339,11 +339,11 @@ export interface CommentsState {
  * LAST entry of the answer. 400 `bad-request` when a field breaks a rule (the message names it):
  * `path` a non-empty string, `line` and `endLine` positive integers, `endLine` only with `line`
  * and not before it, `text` not empty and at most 10 000 characters, `snippet` at most 8 000
- * (the limits are constants of `src/core/comments.ts`), `range` and `head` strings. 404
- * `unknown-range`; 409 `range-moved` when `head` is not the range's head commit (checked before
- * the path: a moved range is said first); 404 `not-found` when `path` is no file of the range's
- * head commit and no deleted file of its base (never a read from disk). Unknown fields are
- * ignored.
+ * (the limits are constants of `src/core/comments.ts`), `range` a string, `head` a non-empty
+ * string. 404 `unknown-range`; 409 `range-moved` when `head` is not the range's head commit
+ * (checked before the path: a moved range is said first); 404 `not-found` when `path` is no file
+ * of the range's head commit and no deleted file of its base (never a read from disk). Unknown
+ * fields are ignored.
  */
 export interface CommentDraft {
 	path: string;

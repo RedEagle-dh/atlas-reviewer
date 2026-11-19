@@ -76,7 +76,10 @@ export function readCommentDraft(value: unknown): CommentDraft {
 		draft.range = value.range;
 	}
 	if (value.head !== undefined) {
-		if (typeof value.head !== "string") throw new InvalidCommentError("`head` must be a string");
+		// Not empty: "no commit" is said by leaving the field out. An empty one would be answered
+		// as a range that has moved on, from nowhere.
+		if (typeof value.head !== "string" || value.head === "")
+			throw new InvalidCommentError("`head` must be a non-empty string");
 		draft.head = value.head;
 	}
 	return draft;

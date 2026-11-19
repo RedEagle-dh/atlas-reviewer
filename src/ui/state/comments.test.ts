@@ -25,7 +25,8 @@ function fakeServer(initial: ReviewComment[] = []) {
 		if (failure?.when === "before") throw failure.error;
 		change?.();
 		if (failure?.when === "after") throw failure.error;
-		return { comments: [...comments] };
+		// New objects in every answer, as a body that is parsed anew gives them.
+		return { comments: comments.map((comment) => ({ ...comment })) };
 	};
 	const record = (draft: CommentDraft): ReviewComment => {
 		const at = new Date(Date.UTC(2026, 0, 1, 12, 0, made++)).toISOString();
@@ -88,7 +89,13 @@ describe("createCommentsStore", () => {
 		await server.api.add({ path: "a.ts", text: "already there" });
 		const store = createCommentsStore(server.api);
 		const first = store.getSnapshot();
-		expect(first).toEqual({ comments: [], loaded: false, error: null, moved: false });
+		expect(first).toEqual({
+			comments: [],
+			loaded: false,
+			error: null,
+			moved: false,
+			answered: true,
+		});
 		expect(store.failure()).toBeNull();
 		// The same object until something changes: React compares snapshots by identity.
 		expect(store.getSnapshot()).toBe(first);
@@ -146,6 +153,29 @@ describe("createCommentsStore", () => {
 		expect(server.log).toEqual(["add one", "add two", "edit c1", "remove c1", "clear"]);
 	});
 
+	test("an answer keeps the objects of the comments that did not change", async () => {
+		const server = fakeServer();
+		const store = createCommentsStore(server.api);
+		await store.add({ path: "a.ts", text: "one" });
+		await store.add({ path: "a.ts", text: "two" });
+		const [one, two] = store.getSnapshot().comments;
+		// What shows one comment compares by identity: another comment must not look like a change.
+		await store.add({ path: "b.ts", text: "three" });
+		expect(store.getSnapshot().comments[0]).toBe(one);
+		expect(store.getSnapshot().comments[1]).toBe(two);
+		await store.edit("c1", "one, edited");
+		const edited = store.getSnapshot().comments;
+		expect(edited[0]).not.toBe(one);
+		expect(edited[0]?.text).toBe("one, edited");
+		expect(edited[1]).toBe(two);
+		// The list that is asked for after a failure is settled the same way.
+		server.failNext("after", new Error("connection lost"));
+		expect(await store.remove("c3")).toBe(false);
+		expect(texts(store)).toEqual(["one, edited", "two"]);
+		expect(store.getSnapshot().comments[0]).toBe(edited[0]);
+		expect(store.getSnapshot().comments[1]).toBe(two);
+	});
+
 	test("a request the server refuses: the message as `error`, the list as the server has it", async () => {
 		const server = fakeServer();
 		const store = createCommentsStore(server.api);
@@ -199,8 +229,13 @@ describe("createCommentsStore", () => {
 			loaded: false,
 			error: "the server is gone",
 			moved: false,
+			answered: false,
 		});
-		expect(store.failure()).toEqual({ message: "the server is gone", moved: false });
+		expect(store.failure()).toEqual({
+			message: "the server is gone",
+			moved: false,
+			answered: false,
+		});
 		expect(server.log).toEqual(["get"]);
 		expect(await store.add({ path: "a.ts", text: "one" })).not.toBeNull();
 		expect(store.getSnapshot()).toMatchObject({ loaded: true, error: null });
@@ -265,7 +300,11 @@ describe("createCommentsStore", () => {
 			moved: true,
 		});
 		// Known the moment the request has answered, without a render in between.
-		expect(store.failure()).toEqual({ message: 'range "r" has moved on', moved: true });
+		expect(store.failure()).toEqual({
+			message: 'range "r" has moved on',
+			moved: true,
+			answered: true,
+		});
 
 		// The page has the new state: the same comment for the new head is written.
 		expect(await store.add({ ...draft, head: NEW_HEAD })).toMatchObject({ line: 3 });
@@ -286,17 +325,22 @@ describe("createCommentsStore", () => {
 		]) {
 			server.failNext("before", error);
 			expect(await store.add({ path: "a.ts", text: "x", head: OLD_HEAD })).toBeNull();
-			expect(store.failure()).toEqual({ message: error.message, moved: false });
+			// Only what the server answered is a message for the reader; the last one is the browser's.
+			expect(store.failure()).toEqual({
+				message: error.message,
+				moved: false,
+				answered: error instanceof ApiError,
+			});
 		}
 		expect(told).toBe(0);
 		expect(server.log).toEqual(["add x", "get", "add x", "get", "add x", "get"]);
 
 		server.failNext("before", new ApiError(409, { error: "range-moved", message: "moved" }));
 		await store.add({ path: "a.ts", text: "x", head: OLD_HEAD });
-		expect(store.failure()).toEqual({ message: "moved", moved: true });
+		expect(store.failure()).toEqual({ message: "moved", moved: true, answered: true });
 		server.failNext("before", new Error("refused"));
 		expect(await store.remove("c1")).toBe(false);
-		expect(store.failure()).toEqual({ message: "refused", moved: false });
+		expect(store.failure()).toEqual({ message: "refused", moved: false, answered: false });
 		expect(told).toBe(1);
 	});
 

@@ -64,6 +64,7 @@ import { buildPrompt } from "../../lib/prompt";
 import { fileRoute } from "../../router";
 import { useAtlas } from "../../state/atlas";
 import { useComments } from "../../state/comments";
+import { pageEdits, panelEdits } from "../../state/composer";
 import { fmt, S } from "../../strings";
 import { StatusMark } from "../marks";
 import { CommentCard } from "./CommentCard";
@@ -118,7 +119,13 @@ export function CommentsPanel() {
 	const [clearing, setClearing] = useState({ open: false, count: 0 });
 	const [working, setWorking] = useState(false);
 	const popup = useRef<HTMLDivElement>(null);
-	const closeButton = useRef<HTMLButtonElement>(null);
+	/**
+	 * The sheet's heading: where the focus is when the sheet opens, and where it goes when what
+	 * had it is gone (the last card, the footer). Not the first control: that is the close button,
+	 * whose tooltip would open with the sheet for a keyboard, and Esc would then close the tooltip
+	 * and leave the sheet open.
+	 */
+	const heading = useRef<HTMLHeadingElement>(null);
 	const clearButton = useRef<HTMLButtonElement>(null);
 	const promptBox = useRef<HTMLPreElement>(null);
 	const count = comments.length;
@@ -187,29 +194,40 @@ export function CommentsPanel() {
 	 * (or following a link out of it) cannot lose the text. Says so unless the key was Esc, which
 	 * the editor answers itself.
 	 */
-	const heldBack = (quiet = false): boolean => {
+	const heldBack = useCallback((quiet = false): boolean => {
 		const field = popup.current?.querySelector<HTMLTextAreaElement>("textarea[data-dirty]");
 		if (!field) return false;
 		field.focus();
 		// One toast however often it is tried: with an id a second one replaces the first.
 		if (!quiet) toast(S.commentUnsaved, { id: "comment-unsaved" });
 		return true;
-	};
+	}, []);
 
-	const onFollow = (event: MouseEvent<HTMLAnchorElement>) => {
-		// A new tab or window: this page, and its sheet, stay as they are.
-		if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
-			return;
-		if (heldBack()) event.preventDefault();
-		else setOpen(false);
-	};
+	// The same function for as long as the sheet lives: it is a prop of every card in the list,
+	// and a new one would draw them all again whenever the sheet changes (a tab, "copied").
+	const onFollow = useCallback(
+		(event: MouseEvent<HTMLAnchorElement>) => {
+			// A new tab or window: this page, and its sheet, stay as they are.
+			if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+				return;
+			if (heldBack()) event.preventDefault();
+			else setOpen(false);
+		},
+		[heldBack],
+	);
 
 	const clearAll = async () => {
 		setWorking(true);
 		const done = await clear();
 		setWorking(false);
-		if (done) setClearing((asked) => ({ ...asked, open: false }));
-		else toast.error(S.commentNotDeleted(failure()?.message ?? ""));
+		if (!done) {
+			toast.error(S.commentNotDeleted(S.whyFailed(failure())));
+			return;
+		}
+		// With the comments go the changes to their texts that were not saved.
+		pageEdits.clear();
+		panelEdits.clear();
+		setClearing((asked) => ({ ...asked, open: false }));
 	};
 
 	const onPromptKey = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -273,13 +291,21 @@ export function CommentsPanel() {
 			<SheetContent
 				ref={popup}
 				side="right"
+				initialFocus={heading}
 				// The close button of the component says "Close": this sheet brings its own.
 				showCloseButton={false}
 				className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-2xl"
 			>
 				<SheetHeader className="gap-1 border-b">
 					<div className="flex items-center gap-2">
-						<SheetTitle>{S.comments}</SheetTitle>
+						<SheetTitle
+							ref={heading}
+							tabIndex={-1}
+							// The ring a control shows, for a keyboard: the reader sees where the focus is.
+							className="-mx-1 rounded-sm px-1 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+						>
+							{S.comments}
+						</SheetTitle>
 						{count > 0 ? (
 							<Badge variant="secondary" className="tabular-nums">
 								{fmt(count)}
@@ -291,12 +317,10 @@ export function CommentsPanel() {
 									<SheetClose
 										render={
 											<Button
-												ref={closeButton}
 												variant="ghost"
 												size="icon-sm"
 												className="-my-1 ml-auto"
 												aria-label={S.close}
-												data-comments-close=""
 											/>
 										}
 									/>
@@ -323,7 +347,9 @@ export function CommentsPanel() {
 							<Alert variant="destructive">
 								<CircleAlertIcon aria-hidden="true" />
 								<AlertTitle>{S.commentsNotLoaded}</AlertTitle>
-								<AlertDescription className="wrap-anywhere">{error}</AlertDescription>
+								<AlertDescription className="wrap-anywhere">
+									{failure()?.answered === false ? S.errorTitle : error}
+								</AlertDescription>
 							</Alert>
 							<Button variant="outline" size="sm" onClick={() => reload()}>
 								{S.retry}
@@ -373,6 +399,7 @@ export function CommentsPanel() {
 														<li key={comment.id}>
 															<CommentCard
 																comment={comment}
+																edits={panelEdits}
 																placeHref={href(
 																	fileRoute(
 																		comment.line === undefined
@@ -381,7 +408,7 @@ export function CommentsPanel() {
 																	),
 																)}
 																onFollow={onFollow}
-																fallbackFocus="[data-comments-close]"
+																fallbackFocus="[data-slot=sheet-title]"
 															/>
 														</li>
 													))}
@@ -456,8 +483,8 @@ export function CommentsPanel() {
 					}}
 				>
 					<AlertDialogContent
-						// Back to the button that asked; it is gone when the comments are: then the sheet's own.
-						finalFocus={() => clearButton.current ?? closeButton.current}
+						// Back to the button that asked; it is gone when the comments are.
+						finalFocus={() => clearButton.current ?? heading.current}
 					>
 						<AlertDialogHeader>
 							<AlertDialogTitle>{S.clearTitle(clearing.count)}</AlertDialogTitle>

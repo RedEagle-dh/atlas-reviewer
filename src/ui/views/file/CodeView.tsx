@@ -45,7 +45,7 @@ import {
 } from "../../lib/threads";
 import { fileRoute } from "../../router";
 import { useAtlas } from "../../state/atlas";
-import { type Composer as ComposerState, composers } from "../../state/composer";
+import { type Composer as ComposerState, composers, pageEdits } from "../../state/composer";
 import { S } from "../../strings";
 import { buildRows, type Row, sameRow } from "./rows";
 
@@ -296,13 +296,16 @@ export function CodeView({
 		// and a card that still has the focus is not what the reader looks at.
 		if (drag) return lineMarks(commented, [spanOf(drag.anchor, drag.head)], drag.anchor);
 		const selected: LineRange[] = written ? [written] : [];
-		const id = pointed.pointer ?? pointed.focus;
-		if (id !== null)
+		// A card that was deleted under the pointer never said that the pointer left it: an id
+		// without a comment counts as none, so the card with the focus is not kept from its mark.
+		const rangeOfCard = (id: string | null): LineRange | null => {
+			if (id === null) return null;
 			for (const thread of threads.values())
-				for (const comment of thread) {
-					const range = comment.id === id ? rangeOf(comment) : null;
-					if (range) selected.push(range);
-				}
+				for (const comment of thread) if (comment.id === id) return rangeOf(comment);
+			return null;
+		};
+		const marked = rangeOfCard(pointed.pointer) ?? rangeOfCard(pointed.focus);
+		if (marked) selected.push(marked);
 		return lineMarks(commented, selected, composerAnchor ?? null);
 	}, [commented, written, composerAnchor, drag, pointed, threads]);
 
@@ -331,13 +334,23 @@ export function CodeView({
 		if (fold && fold.kind === "fold") open(fold.from, fold.to);
 	}, [rows, target, open]);
 
-	// Bring the target line into view (only when it is not already visible below the sticky header);
-	// again after the rows changed, because a fold that hid it has just opened.
+	// Bring the target line into view (only when it is not already visible below the sticky header):
+	// once per link followed and per way of showing the file. `rows` is the trigger for the one
+	// case that needs a second look, a fold that hid the line and has just opened. Any other change
+	// of the rows (a fold the reader opens, a line a comment pins) leaves the page where it is: the
+	// reader is somewhere else by then, and writing a comment must not scroll the page away.
+	const arrived = useRef<string | null>(null);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `rows` is the trigger, not an input.
 	useEffect(() => {
-		if (target === undefined) return;
+		if (target === undefined) {
+			arrived.current = null;
+			return;
+		}
+		const arrival = `${path}:${target}:${options.mode}:${options.showRemoved}`;
+		if (arrived.current === arrival) return;
 		const el = document.querySelector<HTMLElement>(`.code-view [data-line="${target}"]`);
 		if (!el) return;
+		arrived.current = arrival;
 		const header = document.querySelector(".file-head")?.getBoundingClientRect().bottom ?? 0;
 		const rect = el.getBoundingClientRect();
 		if (rect.top < header || rect.bottom > window.innerHeight - 20)
@@ -515,6 +528,7 @@ export function CodeView({
 												<CommentCard
 													key={comment.id}
 													comment={comment}
+													edits={pageEdits}
 													outdated={isOutdated(comment, view.lines) && "changed"}
 													onPointed={onPointed}
 													fallbackFocus={`.code-view .ln[data-line="${line}"] .ln-add`}

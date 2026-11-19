@@ -1,7 +1,7 @@
 /**
  * The review's comments in the browser: loaded once, changed only through the server, and every
  * answer of the server is the new state (it always sends the whole list). `CommentsProvider`
- * provides them, `useComments()` reads them.
+ * provides them, `useComments()` reads them, `useCommentActions()` only changes them.
  */
 import {
 	createContext,
@@ -15,7 +15,14 @@ import {
 	useSyncExternalStore,
 } from "react";
 import type { CommentDraft, CommentEdit, CommentsState, ReviewComment } from "../../core/types";
-import { addComment, clearComments, editComment, getComments, removeComment } from "../api";
+import {
+	ApiError,
+	addComment,
+	clearComments,
+	editComment,
+	getComments,
+	removeComment,
+} from "../api";
 import { commentsByPath } from "../lib/comments";
 import { isRangeMoved } from "./atlas";
 
@@ -28,6 +35,11 @@ export interface CommentFailure {
 	 * written, and the page is loading the new state.
 	 */
 	moved: boolean;
+	/**
+	 * False when no answer came at all (the server is not running, the network is gone): then
+	 * `message` is the browser's word for that, which tells a reader nothing.
+	 */
+	answered: boolean;
 }
 
 export interface Comments {
@@ -81,6 +93,8 @@ export interface CommentsSnapshot {
 	error: string | null;
 	/** True when `error` is the server's "the range has moved on" (see `CommentFailure.moved`). */
 	moved: boolean;
+	/** False when `error` stands for no answer at all (see `CommentFailure.answered`). */
+	answered: boolean;
 }
 
 /**
@@ -91,11 +105,27 @@ export interface CommentsSnapshot {
  * was written, so the list is not asked for, and `onMoved` is told to load the new state.
  */
 export function createCommentsStore(api: CommentsApi = SERVER, onMoved: () => void = () => {}) {
-	let snapshot: CommentsSnapshot = { comments: [], loaded: false, error: null, moved: false };
+	/** Nothing has failed. */
+	const fine = { error: null, moved: false, answered: true };
+	let snapshot: CommentsSnapshot = { comments: [], loaded: false, ...fine };
 	const listeners = new Set<() => void>();
 	const publish = (next: CommentsSnapshot) => {
 		snapshot = next;
 		for (const listener of listeners) listener();
+	};
+	/**
+	 * A list of the server with the objects the page already has for every comment that did not
+	 * change (its text is all that can). Whatever shows one comment is given the same object and
+	 * is not drawn again because another comment was written: with 200 cards that is felt.
+	 */
+	const settled = (comments: readonly ReviewComment[]): readonly ReviewComment[] => {
+		const known = new Map(snapshot.comments.map((comment) => [comment.id, comment]));
+		return comments.map((comment) => {
+			const before = known.get(comment.id);
+			return before?.updatedAt === comment.updatedAt && before.text === comment.text
+				? before
+				: comment;
+		});
 	};
 	// Every answer is the whole list, so the last answer to arrive has to be the newest: a request
 	// waits for the one before it.
@@ -109,16 +139,17 @@ export function createCommentsStore(api: CommentsApi = SERVER, onMoved: () => vo
 		const done = queue.then(async () => {
 			try {
 				const state = await send();
-				publish({ comments: state.comments, loaded: true, error: null, moved: false });
+				publish({ comments: settled(state.comments), loaded: true, ...fine });
 				return state;
 			} catch (error) {
 				const moved = isRangeMoved(error);
 				const now = askAgain && !moved ? await api.get().catch(() => null) : null;
 				publish({
-					comments: now?.comments ?? snapshot.comments,
+					comments: now ? settled(now.comments) : snapshot.comments,
 					loaded: snapshot.loaded || now !== null,
 					error: error instanceof Error ? error.message : String(error),
 					moved,
+					answered: error instanceof ApiError,
 				});
 				if (moved) onMoved();
 				return null;
@@ -146,11 +177,24 @@ export function createCommentsStore(api: CommentsApi = SERVER, onMoved: () => vo
 			run(() => api.remove(id), true).then((state) => state !== null),
 		clear: (): Promise<boolean> => run(() => api.clear(), true).then((state) => state !== null),
 		failure: (): CommentFailure | null =>
-			snapshot.error === null ? null : { message: snapshot.error, moved: snapshot.moved },
+			snapshot.error === null
+				? null
+				: { message: snapshot.error, moved: snapshot.moved, answered: snapshot.answered },
 	};
 }
 
+/**
+ * The requests without the list: the same functions for as long as the provider lives. A
+ * component that shows one comment asks for these alone (`useCommentActions`), so it is not
+ * drawn again when the list changes.
+ */
+export type CommentActions = Pick<
+	Comments,
+	"add" | "edit" | "remove" | "clear" | "reload" | "failure"
+>;
+
 const CommentsContext = createContext<Comments | null>(null);
+const ActionsContext = createContext<CommentActions | null>(null);
 
 /**
  * Comments belong to the review, not to a range, so the provider stays where it is when the
@@ -187,12 +231,8 @@ export function CommentsProvider({
 		},
 		[store],
 	);
-	const value = useMemo<Comments>(
+	const actions = useMemo<CommentActions>(
 		() => ({
-			comments,
-			byPath,
-			loaded,
-			error,
 			add,
 			edit: store.edit,
 			remove: store.remove,
@@ -200,9 +240,23 @@ export function CommentsProvider({
 			reload: store.load,
 			failure: store.failure,
 		}),
-		[comments, byPath, loaded, error, add, store],
+		[add, store],
 	);
-	return <CommentsContext.Provider value={value}>{children}</CommentsContext.Provider>;
+	const value = useMemo<Comments>(
+		() => ({ comments, byPath, loaded, error, ...actions }),
+		[comments, byPath, loaded, error, actions],
+	);
+	return (
+		<ActionsContext.Provider value={actions}>
+			<CommentsContext.Provider value={value}>{children}</CommentsContext.Provider>
+		</ActionsContext.Provider>
+	);
+}
+
+export function useCommentActions(): CommentActions {
+	const actions = useContext(ActionsContext);
+	if (!actions) throw new Error("useCommentActions outside <CommentsProvider>");
+	return actions;
 }
 
 export function useComments(): Comments {
