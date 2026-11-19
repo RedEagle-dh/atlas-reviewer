@@ -61,10 +61,11 @@ import { copyText } from "../../lib/clipboard";
 import { commentsByPath, sortComments } from "../../lib/comments";
 import { baseName, dirName } from "../../lib/files";
 import { buildPrompt } from "../../lib/prompt";
-import { fileRoute } from "../../router";
+import { fileRoute, type Route, withRange } from "../../router";
 import { useAtlas } from "../../state/atlas";
 import { useComments } from "../../state/comments";
 import { pageEdits, panelEdits } from "../../state/composer";
+import { hrefOf } from "../../state/route";
 import { fmt, S } from "../../strings";
 import { StatusMark } from "../marks";
 import { CommentCard } from "./CommentCard";
@@ -118,6 +119,21 @@ export function CommentsPanel() {
 	 */
 	const [clearing, setClearing] = useState({ open: false, count: 0 });
 	const [working, setWorking] = useState(false);
+	// Another tab of the review may have written comments since this one asked: the list is asked
+	// for again when the sheet opens, and the prompt is not copied before the answer is there
+	// (whatever it is: with the server gone, the comments this tab knows are still worth copying).
+	const [asking, setAsking] = useState(false);
+	useEffect(() => {
+		if (!open) return;
+		let current = true;
+		setAsking(true);
+		reload().then(() => {
+			if (current) setAsking(false);
+		});
+		return () => {
+			current = false;
+		};
+	}, [open, reload]);
 	const popup = useRef<HTMLDivElement>(null);
 	/**
 	 * The sheet's heading: where the focus is when the sheet opens, and where it goes when what
@@ -161,6 +177,16 @@ export function CommentsPanel() {
 		const timer = setTimeout(() => setCopied(false), 1600);
 		return () => clearTimeout(timer);
 	}, [copied]);
+
+	// A comment is read where it was written: its links lead into its own range (the first range
+	// has no name in the URL), as long as the review still has that range.
+	const hrefIn = useCallback(
+		(range: string, route: Route): string =>
+			meta.ranges.some((r) => r.id === range)
+				? hrefOf(withRange(route, range === meta.ranges[0]?.id ? undefined : range))
+				: href(route),
+		[meta.ranges, href],
+	);
 
 	const selectPrompt = useCallback(() => {
 		const box = promptBox.current;
@@ -391,7 +417,7 @@ export function CommentsPanel() {
 											<li key={path} className="flex flex-col gap-2" data-comment-group={path}>
 												<FileLink
 													path={path}
-													href={href(fileRoute({ path }))}
+													href={hrefIn(list[0]?.range ?? model.range.id, fileRoute({ path }))}
 													onFollow={onFollow}
 												/>
 												<ul className="flex flex-col gap-2">
@@ -400,7 +426,8 @@ export function CommentsPanel() {
 															<CommentCard
 																comment={comment}
 																edits={panelEdits}
-																placeHref={href(
+																placeHref={hrefIn(
+																	comment.range,
 																	fileRoute(
 																		comment.line === undefined
 																			? { path }
@@ -461,7 +488,7 @@ export function CommentsPanel() {
 								<Trash2Icon data-icon="inline-start" />
 								{S.clearComments}
 							</Button>
-							<Button onClick={copy} data-testid="copy-prompt">
+							<Button onClick={copy} disabled={asking} data-testid="copy-prompt">
 								{copied ? (
 									<CheckIcon data-icon="inline-start" />
 								) : (

@@ -3,9 +3,11 @@
  * a range, or with the file's comments). What is typed lives in the composer's memory
  * (`state/composer.ts`), so it is still there when the page is built anew.
  */
+import { useEffect } from "react";
 import { flushSync } from "react-dom";
 import type { TokenLine } from "../../../core/types";
 import { snippetOf } from "../../lib/comments";
+import { useAtlas } from "../../state/atlas";
 import { useCommentActions } from "../../state/comments";
 import { type Composer as ComposerState, composers } from "../../state/composer";
 import { S } from "../../strings";
@@ -72,6 +74,16 @@ export function Composer({
 }) {
 	const { add, failure } = useCommentActions();
 	const { line, endLine, memory } = composer;
+	// A draft outlives the page it was begun on (the range gets commits, the reader switches the
+	// range). Its line numbers were chosen on that page: under another head they can be other
+	// lines, and the composer says so instead of quietly quoting them.
+	const head = useAtlas().model.range.head.sha;
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `composer` is the trigger — lines chosen anew (a shift-click) start a new note.
+	useEffect(() => {
+		memory.head ??= head;
+	}, [composer, memory, head]);
+	const elsewhere = line !== undefined && memory.head !== undefined && memory.head !== head;
+	const hint = composer.lost ? S.composerLinesGone : elsewhere ? S.composerElsewhere : null;
 
 	const save = async (text: string): Promise<string | null> => {
 		const created = await add(
@@ -112,7 +124,7 @@ export function Composer({
 				line={line}
 				endLine={endLine}
 				initial={memory.text}
-				problem={memory.problem}
+				problem={memory.problem ?? hint}
 				// A composer that appears with a save that failed (the range moved, the page was built
 				// anew): the reader was in it, and is put back into it.
 				autoFocus={memory.problem !== null}

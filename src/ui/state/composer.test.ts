@@ -116,6 +116,16 @@ describe("createComposerStore", () => {
 		expect(told()).toBe(4);
 	});
 
+	test("extend forgets the head the lines were first chosen at: they are chosen anew", () => {
+		const { composers } = store();
+		composers.open("a.ts", 10);
+		const memory = composers.get("a.ts")?.memory;
+		if (!memory) throw new Error("no composer");
+		memory.head = "an earlier head";
+		expect(composers.extend("a.ts", 12)).toBe(true);
+		expect(composers.get("a.ts")?.memory.head).toBeUndefined();
+	});
+
 	test("extend leaves a composer with text and one for the whole file alone", () => {
 		const { composers } = store();
 		composers.open("a.ts", 10);
@@ -141,6 +151,8 @@ describe("createComposerStore", () => {
 		const after = composers.get("a.ts");
 		expect(place(after)).toEqual({ line: undefined, endLine: undefined, anchor: undefined });
 		expect(after?.memory).toBe(before.memory);
+		// It says what happened to it.
+		expect(after?.lost).toBe(true);
 		// Already for the whole file: nothing to do.
 		composers.toFile("a.ts");
 		expect(composers.get("a.ts")).toBe(after);

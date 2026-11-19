@@ -3,6 +3,7 @@
  * review-atlas serve <review-file> [--port 4610] [--host 127.0.0.1] [--range <id>] [--open] [--dev]
  * review-atlas check <review-file> [--range <id>] [--cold]
  */
+import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { RangeBuild } from "../src/core/build";
@@ -23,9 +24,12 @@ const USAGE = `usage:
           unresolved (except those the review lists in expectedUnresolved)
   --cold  check: ignore the extraction cache on the first build (the second build reads it)`;
 
-/** The tool's directory: its `bunfig.toml` registers the Tailwind plugin of the UI bundle. */
-const TOOL_DIR = resolve(import.meta.dir, "..");
-const RESTARTED = "REVIEW_ATLAS_RESTARTED";
+/**
+ * The tool's directory: its `bunfig.toml` registers the Tailwind plugin of the UI bundle. The
+ * real path, as the working directory of a process is one: reached through a link, the two
+ * would otherwise never be equal, and `serve` would start itself again without end.
+ */
+const TOOL_DIR = realpathSync(resolve(import.meta.dir, ".."));
 
 /**
  * Bun reads `bunfig.toml` from the working directory when the process starts, and without it
@@ -36,7 +40,6 @@ async function serveFromToolDir(argv: string[], fileAt: number): Promise<number>
 	const args = argv.map((arg, i) => (i === fileAt ? resolve(arg) : arg));
 	const child = Bun.spawn([process.execPath, import.meta.path, ...args], {
 		cwd: TOOL_DIR,
-		env: { ...process.env, [RESTARTED]: "1" },
 		stdin: "inherit",
 		stdout: "inherit",
 		stderr: "inherit",
@@ -67,7 +70,7 @@ async function main(argv: string[]): Promise<number> {
 		console.log(USAGE);
 		return values.help ? 0 : 2;
 	}
-	if (command === "serve" && !process.env[RESTARTED] && resolve(process.cwd()) !== TOOL_DIR) {
+	if (command === "serve" && realpathSync(process.cwd()) !== TOOL_DIR) {
 		const fileAt = tokens.filter((t) => t.kind === "positional")[1]?.index;
 		if (fileAt !== undefined) return serveFromToolDir(argv, fileAt);
 	}

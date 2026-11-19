@@ -221,6 +221,12 @@ export function CommentsProvider({
 	const [store] = useState(() => createCommentsStore(SERVER, () => latest.current.onMoved()));
 	useEffect(() => {
 		store.load();
+		// Another tab of the same review writes comments too: back in this one, ask again.
+		const onVisible = () => {
+			if (document.visibilityState === "visible") store.load();
+		};
+		document.addEventListener("visibilitychange", onVisible);
+		return () => document.removeEventListener("visibilitychange", onVisible);
 	}, [store]);
 	const { comments, loaded, error } = useSyncExternalStore(store.subscribe, store.getSnapshot);
 	const byPath = useMemo(() => commentsByPath(comments), [comments]);

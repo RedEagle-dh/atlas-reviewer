@@ -11,12 +11,21 @@ import { locationOf, sortComments } from "./comments";
 export interface PromptContext {
 	repoName: string;
 	/** `ReviewModel.range` fits. */
-	range: { label: string; base: { ref: string; sha: string }; head: { ref: string; sha: string } };
+	range: {
+		id: string;
+		label: string;
+		base: { ref: string; sha: string };
+		head: { ref: string; sha: string };
+	};
 	/** `ReviewModel.readingOrder`: the comments are listed in it (see `sortComments`). */
 	readingOrder: readonly string[];
 	/** The language id of a quote's code fence (`ChangedFile.language`); without one the fence is bare. */
 	languageOf?: (path: string) => string | null;
-	/** `"deleted"` is said at the comment's place: its line numbers are those of the old version. */
+	/**
+	 * The file's status in `range`; `"deleted"` is said at the comment's place. That its line
+	 * numbers are those of the old version is said only of a comment written in this range at
+	 * this head: of any other, what the file was when it was written is not known.
+	 */
 	statusOf?: (path: string) => FileStatus | "unchanged" | undefined;
 }
 
@@ -54,9 +63,11 @@ function heading(comment: ReviewComment, number: number | null, context: PromptC
 	const onLines = comment.line !== undefined;
 	const notes: string[] = [];
 	if (!onLines) notes.push(P.wholeFile);
+	const { range } = context;
+	const writtenHere = comment.range === range.id && comment.head === range.head.sha;
 	if (context.statusOf?.(comment.path) === "deleted")
-		notes.push(onLines ? P.deletedLines : P.deletedFile);
-	if (comment.head !== context.range.head.sha) notes.push(P.atCommit(comment.head));
+		notes.push(onLines && writtenHere ? P.deletedLines : P.deletedFile);
+	if (comment.head !== range.head.sha) notes.push(P.atCommit(comment.head));
 	const place = `${locationOf(comment)}${notes.length > 0 ? ` (${notes.join("; ")})` : ""}`;
 	return number === null ? `## ${place}` : `## ${number}. ${place}`;
 }

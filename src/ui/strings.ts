@@ -277,6 +277,11 @@ export const S = {
 					: "der Server antwortet nicht. Läuft er noch?",
 	/** A new comment that was refused because of it: the composer keeps the text. */
 	commentMoved: `Nicht gespeichert: ${RANGE_MOVED} Stelle prüfen und erneut senden.`,
+	/** A comment begun on another state of the code than the page shows now. */
+	composerElsewhere:
+		"Begonnen auf einem anderen Stand des Codes: Die Zeilen können jetzt andere sein. Stelle prüfen, dann senden.",
+	composerLinesGone:
+		"Die Zeilen, für die dieser Kommentar begonnen wurde, gibt es nicht mehr: Er gilt jetzt der ganzen Datei.",
 	/** Esc is pressed in a field that holds text: why nothing happened. */
 	escKeepsText: "Esc schließt nur ein leeres Feld. „Abbrechen“ verwirft den Text.",
 	escKeepsEdit: "Esc schließt nur ohne Änderung. „Abbrechen“ verwirft sie.",

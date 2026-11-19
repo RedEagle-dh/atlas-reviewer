@@ -33,6 +33,8 @@ export interface ComposerPlace {
 export interface Composer extends ComposerPlace {
 	/** The line the selection started on: a shift-click extends the range from here. */
 	anchor?: number;
+	/** It was begun for lines that are gone since, and is a comment on the whole file now. */
+	lost?: true;
 	/**
 	 * What survives when the page is built anew. It is written while the reader types and read
 	 * when a composer appears; changing it tells nobody, so typing redraws nothing but the field.
@@ -41,6 +43,11 @@ export interface Composer extends ComposerPlace {
 		text: string;
 		/** Why the last attempt to save failed, as the composer says it. */
 		problem: string | null;
+		/**
+		 * The head commit the page showed when the reader chose these lines (the composer notes it
+		 * when it first appears). Under another head the same numbers can be other lines.
+		 */
+		head?: string;
 	};
 }
 
@@ -100,18 +107,20 @@ export function createComposerStore() {
 			const current = open.get(path);
 			if (!current || current.line === undefined || holdsText(current)) return false;
 			const anchor = current.anchor ?? current.line;
+			// Lines chosen anew, on the page as it is now: the note of the head starts over.
+			delete current.memory.head;
 			open.set(path, { ...placed(anchor, line), anchor, memory: current.memory });
 			changed();
 			return true;
 		},
 		/**
 		 * The composer's lines are no longer there (the file got shorter): it becomes a comment on
-		 * the whole file and keeps what is typed.
+		 * the whole file, keeps what is typed, and says what happened (`lost`).
 		 */
 		toFile(path: string): void {
 			const current = open.get(path);
 			if (!current || current.line === undefined) return;
-			open.set(path, { memory: current.memory });
+			open.set(path, { memory: current.memory, lost: true });
 			changed();
 		},
 		close,

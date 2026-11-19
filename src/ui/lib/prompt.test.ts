@@ -9,7 +9,12 @@ const EARLIER = "fedcba9876543210fedcba9876543210fedcba98";
 
 const context: PromptContext = {
 	repoName: "review-atlas",
-	range: { label: "Branch", base: { ref: "main", sha: BASE }, head: { ref: "HEAD", sha: HEAD } },
+	range: {
+		id: "branch",
+		label: "Branch",
+		base: { ref: "main", sha: BASE },
+		head: { ref: "HEAD", sha: HEAD },
+	},
 	readingOrder: ["src/core/session.ts", "src/server/api.ts", "src/old.ts", "docs/notes.txt"],
 	languageOf: (path) => (path.endsWith(".ts") ? "typescript" : null),
 	statusOf: (path) => (path === "src/old.ts" ? "deleted" : "modified"),
@@ -152,10 +157,11 @@ describe("buildPrompt", () => {
 			comment("src/server/api.ts", "An earlier state.", { line: 3, head: EARLIER }),
 			comment("src/server/api.ts", "The file, earlier.", { head: EARLIER }),
 			comment("src/old.ts", "Gone, earlier.", { head: EARLIER }),
+			comment("src/old.ts", "From another range.", { line: 20, range: "last" }),
 		];
 		expect(buildPrompt(comments, context)).toBe(
 			text(
-				...INTRO(6),
+				...INTRO(7),
 				"## 1. src/server/api.ts (whole file; at commit fedcba9)",
 				"",
 				"The file, earlier.",
@@ -180,9 +186,15 @@ describe("buildPrompt", () => {
 				"",
 				"Was this still used?",
 				"",
-				"## 6. src/old.ts:9-12 (deleted file — line numbers of the old version; at commit fedcba9)",
+				// Written at another commit, or in another range: what the file was then is not known,
+				// so whose line numbers these are is not claimed.
+				"## 6. src/old.ts:9-12 (deleted file; at commit fedcba9)",
 				"",
 				"And this?",
+				"",
+				"## 7. src/old.ts:20 (deleted file)",
+				"",
+				"From another range.",
 				"",
 			),
 		);
