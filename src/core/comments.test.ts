@@ -248,7 +248,7 @@ describe("createCommentStore", () => {
 		expect((await store.list()).comments.map((c) => c.text)).toEqual(["kept"]);
 	});
 
-	test("an unreadable file counts as empty and is kept aside: the next write does not destroy it", async () => {
+	test("a file that holds no list counts as empty and is kept aside: the next write does not destroy it", async () => {
 		const said = console.error;
 		const lines: string[] = [];
 		console.error = (line: string) => lines.push(line);
@@ -276,6 +276,24 @@ describe("createCommentStore", () => {
 		} finally {
 			console.error = said;
 		}
+	});
+
+	test("a file that cannot be read is no empty list: the store rejects and leaves it where it is", async () => {
+		const own = join(dir, "cannot-read");
+		const file = join(own, "x.comments.json");
+		// A directory in the file's place cannot be read as a file, whoever runs the test.
+		await mkdir(file, { recursive: true });
+		const store = createCommentStore(file);
+		await expect(store.list()).rejects.toMatchObject({ code: "EISDIR" });
+		await expect(store.add(on("a.ts", "lost"))).rejects.toMatchObject({ code: "EISDIR" });
+		await expect(store.clear()).rejects.toMatchObject({ code: "EISDIR" });
+		// Nothing moved aside, nothing written next to it or into it.
+		expect(await readdir(own)).toEqual(["x.comments.json"]);
+		expect(await readdir(file)).toEqual([]);
+		// Once it can be read again, the store goes on.
+		await rm(file, { recursive: true });
+		const { comments } = await store.add(on("a.ts", "written"));
+		expect(await onDisk(file)).toEqual({ comments });
 	});
 
 	test("a hand-edited file: the entries that break a rule are left out, the others stay", async () => {

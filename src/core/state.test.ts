@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createStateStore } from "./state";
@@ -60,9 +60,22 @@ describe("createStateStore", () => {
 		expect(Object.getPrototypeOf({})).toBe(Object.prototype);
 	});
 
-	test("an unreadable file counts as empty", async () => {
+	test("a file that is not JSON counts as empty", async () => {
 		const file = join(dir, "broken.json");
 		await Bun.write(file, "{ not json");
 		expect(await createStateStore(file).read()).toEqual({ viewed: {} });
+	});
+
+	test("a file that cannot be read is no empty state: read and set reject, and it stays as it is", async () => {
+		const own = join(dir, "cannot-read");
+		const file = join(own, "x.json");
+		// A directory in the file's place cannot be read as a file, whoever runs the test.
+		await mkdir(file, { recursive: true });
+		const store = createStateStore(file);
+		await expect(store.read()).rejects.toMatchObject({ code: "EISDIR" });
+		await expect(store.set("a.ts", "sha-a")).rejects.toMatchObject({ code: "EISDIR" });
+		// Nothing written next to it or into it.
+		expect(await readdir(own)).toEqual(["x.json"]);
+		expect(await readdir(file)).toEqual([]);
 	});
 });

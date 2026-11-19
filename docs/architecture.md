@@ -49,8 +49,9 @@ Data lives in `.review-atlas/` inside the tool directory (git-ignored): `state/<
 (the "viewed" marks), `comments/<review id>.json` (the comments) and `cache/imports.json`
 (extraction results by blob sha). The two stores keep nothing in memory: every request reads its
 file first, so a second server of the same review (on another port) does not write an older
-list over a newer one. A comments file that is there but holds no list is moved aside
-(`….unreadable-<time>`), never written over.
+list over a newer one. A comments file that was read but holds no list is moved aside
+(`….unreadable-<time>`), never written over; a store file that cannot be read at all (no
+permission, a directory in its place) stays as it is, and the request fails (500 `internal`).
 
 ### How a model is built
 

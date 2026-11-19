@@ -123,16 +123,25 @@ function readComment(value: unknown): ReviewComment {
 
 /**
  * The comments of a file on disk; none when there is no file, and without the entries that break
- * a rule. A file that is there but holds no list of comments (a hand-edit gone wrong) is moved
+ * a rule. A file that was read but holds no list of comments (a hand-edit gone wrong) is moved
  * aside first: the next write would put a new list in its place, and what it held would be gone.
+ * A file that cannot be read (no permission, a directory in its place) rejects with the error of
+ * the read and stays where it is: what it holds is unknown, so it is neither moved nor written over.
  */
 async function readComments(file: string): Promise<ReviewComment[]> {
 	const comments: ReviewComment[] = [];
 	const ids = new Set<string>();
-	if (!(await Bun.file(file).exists())) return comments;
+	let text: string;
+	try {
+		text = await Bun.file(file).text();
+	} catch (error) {
+		// No file yet, or gone since: no comments.
+		if (error instanceof Error && "code" in error && error.code === "ENOENT") return comments;
+		throw error;
+	}
 	let data: unknown;
 	try {
-		data = JSON.parse(await Bun.file(file).text());
+		data = JSON.parse(text);
 	} catch {
 		// Not JSON: handled with every other shape that is no list, below.
 	}

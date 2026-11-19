@@ -26,11 +26,25 @@ export function createStateStore(file: string): StateStore {
 		return run;
 	};
 
+	/**
+	 * The marks on disk. No file, or one whose text is no JSON or holds no `viewed`, means nothing
+	 * viewed. A file that cannot be read (no permission, a directory in its place) rejects with the
+	 * error of the read: "nothing viewed" would let the next `set` write its one mark over all the
+	 * marks the file holds.
+	 */
 	const read = async (): Promise<ViewedState> => {
 		// No prototype: a path such as `__proto__` is an ordinary key here.
 		const viewed: Record<string, string> = Object.create(null);
+		let text: string;
 		try {
-			const data: unknown = JSON.parse(await Bun.file(file).text());
+			text = await Bun.file(file).text();
+		} catch (error) {
+			// No state yet, or the file is gone since: nothing viewed.
+			if (error instanceof Error && "code" in error && error.code === "ENOENT") return { viewed };
+			throw error;
+		}
+		try {
+			const data: unknown = JSON.parse(text);
 			if (typeof data === "object" && data !== null && "viewed" in data) {
 				const marks = data.viewed;
 				if (typeof marks === "object" && marks !== null)
@@ -38,7 +52,7 @@ export function createStateStore(file: string): StateStore {
 						if (typeof blob === "string") viewed[path] = blob;
 			}
 		} catch {
-			// No state yet (or unreadable): nothing viewed.
+			// Not JSON: nothing viewed.
 		}
 		return { viewed };
 	};
