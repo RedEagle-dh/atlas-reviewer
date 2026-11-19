@@ -3,13 +3,43 @@
  * neighbourhood ("Zusammenhang"), and the code. Works for any file of the head commit; a file
  * outside the review is shown read-only and marked as such.
  */
-import "../../styles/file.css";
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import {
+	BinaryIcon,
+	CheckIcon,
+	ChevronDownIcon,
+	ChevronLeftIcon,
+	ChevronRightIcon,
+	ChevronUpIcon,
+	CircleAlertIcon,
+	CircleCheckIcon,
+	CircleIcon,
+	CopyIcon,
+	FileIcon,
+	FileXIcon,
+	MapIcon,
+	ScissorsIcon,
+} from "lucide-react";
+import { Fragment, type ReactNode, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+	Breadcrumb,
+	BreadcrumbItem,
+	BreadcrumbLink,
+	BreadcrumbList,
+	BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Kbd } from "@/components/ui/kbd";
+import { Toggle } from "@/components/ui/toggle";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import type { ChangedFile, FileView } from "../../../core/types";
 import { ApiError, getFile } from "../../api";
-import { Icon } from "../../components/icons";
 import { Delta, StatusBadge } from "../../components/marks";
-import { ErrorView, Loading } from "../../components/states";
+import { ErrorView, Loading, Notice } from "../../components/states";
 import { baseName, viewedMark } from "../../lib/files";
 import { readStored } from "../../lib/storage";
 import { fileRoute, type Grouping, mapRoute, type Route, readFileParams } from "../../router";
@@ -65,29 +95,89 @@ function jumpToChange(direction: 1 | -1): number | null {
 	return anchors.indexOf(target);
 }
 
+/**
+ * The classes of a link that looks like a button. A link stays an `<a>`: Base UI's Button gives
+ * its element the role `button`. `cn` settles what the variant overrides of the base classes
+ * (`border-border` over `border-transparent`), as the Button component does.
+ */
+function buttonLook(look: Parameters<typeof buttonVariants>[0]): string {
+	return cn(buttonVariants(look));
+}
+
+/** What an icon-only control does and which key does the same: on hover and on keyboard focus. */
+function Hint({ label, keys }: { label: string; keys?: string }) {
+	return (
+		<TooltipContent>
+			{label}
+			{keys ? <Kbd>{keys}</Kbd> : null}
+		</TooltipContent>
+	);
+}
+
+/**
+ * The path: the folders as crumbs (each leads to the map at that folder), then the file name,
+ * which is the page's heading. When the row gets narrow the folders give way first, cut from the
+ * LEFT (a right-to-left box around the left-to-right list of folders); then the name is cut.
+ */
 function PathCrumbs({ path, onDir }: { path: string; onDir: (dir: string) => string }) {
 	const parts = path.split("/");
 	const name = parts.pop() ?? path;
 	return (
-		<span className="file-path" title={path}>
-			{/* The directories give way (cut from the left) before the file name does. */}
-			<span className="file-path-dirs">
-				{"\u200e"}
-				{parts.map((part, i) => {
-					const dir = parts.slice(0, i + 1).join("/");
-					return (
-						<span key={dir} className="file-path-dir">
-							<a href={onDir(dir)} title={S.folderOnMap}>
-								{part}
-							</a>
-							<span className="file-path-sep">/</span>
-						</span>
-					);
-				})}
-				{"\u200e"}
-			</span>
-			<span className="file-path-name">{name}</span>
-		</span>
+		<div className="flex min-w-0 items-baseline text-base">
+			{parts.length > 0 ? (
+				<Breadcrumb
+					aria-label={S.pathNav}
+					// Tab reaches the folders that are cut off too: the box scrolls to the one with the
+					// focus (the browser does not for one that is partly visible) and back to the end of
+					// the path afterwards. The ellipsis would blank what is scrolled in, so there is none
+					// meanwhile. Not for a click: a link that moves under the pointer would miss it.
+					className="-ml-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap [direction:rtl] has-focus-visible:text-clip"
+					onFocus={(event) => {
+						if (event.target.matches(":focus-visible"))
+							event.target.scrollIntoView({ block: "nearest", inline: "nearest" });
+					}}
+					onBlur={(event) => {
+						if (!event.currentTarget.contains(event.relatedTarget))
+							event.currentTarget.scrollLeft = 0;
+					}}
+				>
+					<BreadcrumbList className="inline text-base [direction:ltr]">
+						{parts.map((part, i) => {
+							const dir = parts.slice(0, i + 1).join("/");
+							return (
+								<Fragment key={dir}>
+									<BreadcrumbItem className="inline">
+										<Tooltip>
+											<TooltipTrigger
+												render={
+													<BreadcrumbLink href={onDir(dir)} aria-description={S.folderOnMap} />
+												}
+												// The padding is the space around the slashes (the box's negative margin
+												// takes the first one back) and makes the link easier to hit. The ring is
+												// inside the link: the box cuts off what is around it.
+												className="rounded-sm px-1 py-0.5 outline-none hover:underline hover:underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+											>
+												{part}
+											</TooltipTrigger>
+											<Hint label={S.folderOnMap} />
+										</Tooltip>
+									</BreadcrumbItem>
+									<BreadcrumbSeparator className="inline text-muted-foreground/60">
+										/
+									</BreadcrumbSeparator>
+								</Fragment>
+							);
+						})}
+					</BreadcrumbList>
+				</Breadcrumb>
+			) : null}
+			<h2
+				className={cn("max-w-full shrink-0 truncate font-semibold", parts.length > 0 && "pl-1")}
+				title={path}
+			>
+				{name}
+			</h2>
+		</div>
 	);
 }
 
@@ -98,21 +188,84 @@ function CopyButton({ text }: { text: string }) {
 		const t = setTimeout(() => setCopied(false), 1400);
 		return () => clearTimeout(t);
 	}, [copied]);
+	const copy = () => {
+		// No clipboard outside a secure context (the server reached by a plain http address).
+		const written = navigator.clipboard?.writeText(text);
+		if (!written) {
+			toast.error(S.copyFailed);
+			return;
+		}
+		written.then(
+			() => setCopied(true),
+			() => toast.error(S.copyFailed),
+		);
+	};
 	return (
-		<button
-			type="button"
-			className="btn icon quiet"
-			title={copied ? S.copied : S.copyPath}
-			aria-label={S.copyPath}
-			onClick={() => {
-				navigator.clipboard?.writeText(text).then(
-					() => setCopied(true),
-					() => setCopied(false),
-				);
-			}}
-		>
-			<Icon name={copied ? "check" : "copy"} />
-		</button>
+		<Tooltip>
+			{/* The tooltip stays open on the click: it is where "Kopiert" is said. */}
+			<TooltipTrigger
+				closeOnClick={false}
+				render={
+					<Button
+						variant="ghost"
+						size="icon-sm"
+						className="shrink-0 text-muted-foreground"
+						aria-label={S.copyPath}
+						onClick={copy}
+					/>
+				}
+			>
+				{copied ? <CheckIcon /> : <CopyIcon />}
+			</TooltipTrigger>
+			<Hint label={copied ? S.copied : S.copyPath} />
+			<span className="sr-only" role="status">
+				{copied ? S.copied : null}
+			</span>
+		</Tooltip>
+	);
+}
+
+/**
+ * Previous or next file: a link (so a new tab works) that looks like an icon button; at an end of
+ * the list a disabled button.
+ */
+function FileStep({
+	href,
+	label,
+	keys,
+	children,
+}: {
+	href: string | undefined;
+	label: string;
+	keys: string;
+	children: ReactNode;
+}) {
+	if (href === undefined)
+		return (
+			<Button variant="ghost" size="icon-sm" disabled aria-label={label}>
+				{children}
+			</Button>
+		);
+	return (
+		<Tooltip>
+			<TooltipTrigger
+				render={<a href={href} aria-label={label} aria-keyshortcuts={keys} />}
+				className={buttonLook({ variant: "ghost", size: "icon-sm" })}
+			>
+				{children}
+			</TooltipTrigger>
+			<Hint label={label} keys={keys} />
+		</Tooltip>
+	);
+}
+
+/** A note above the code: what is shown in place of, or about, the file's content. */
+function Note({ icon, children }: { icon: ReactNode; children: ReactNode }) {
+	return (
+		<Alert role="note">
+			{icon}
+			<AlertDescription>{children}</AlertDescription>
+		</Alert>
 	);
 }
 
@@ -168,18 +321,17 @@ function Loaded({
 	const dirHref = (dir: string) =>
 		href(mapRoute({ group: dir, grouping: "dirs", focus: view.path }));
 
+	const toChange = (direction: 1 | -1) => {
+		const i = jumpToChange(direction);
+		if (i !== null) setChangeIndex(i);
+	};
+
 	useKeys({
 		j: () => next && go(fileRoute({ path: next.path })),
 		k: () => prev && go(fileRoute({ path: prev.path })),
 		v: () => file && setViewed(file, mark !== "viewed"),
-		n: () => {
-			const i = jumpToChange(1);
-			if (i !== null) setChangeIndex(i);
-		},
-		p: () => {
-			const i = jumpToChange(-1);
-			if (i !== null) setChangeIndex(i);
-		},
+		n: () => toChange(1),
+		p: () => toChange(-1),
 	});
 
 	useEffect(() => {
@@ -188,148 +340,164 @@ function Loaded({
 
 	const changeCount = plain ? 0 : view.changes.length;
 	const statusLabel = view.status === "added" ? S.newFile : undefined;
+	const note = view.oldPath
+		? S.renamedFrom(view.oldPath)
+		: view.status === "unchanged"
+			? S.unchangedHint
+			: excluded
+				? S.excludedHint(categoryLabel(meta.categories, view.category))
+				: undefined;
 
 	return (
-		<article className="file-page" data-path={view.path}>
-			<header className="file-head">
-				<div className="file-head-row">
-					<PathCrumbs path={view.path} onDir={dirHref} />
-					<CopyButton text={view.path} />
-					<span className="file-head-spacer" />
-					{file ? (
-						<button
-							type="button"
-							className={`btn viewed-toggle is-${mark}`}
-							aria-pressed={mark === "viewed"}
-							onClick={() => setViewed(file, mark !== "viewed")}
-							title={S.keyHint("v")}
-							data-testid="viewed-toggle"
-						>
-							<Icon name={mark === "stale" ? "stale" : "check"} />
-							{mark === "stale" ? S.changedSinceViewed : S.viewedToggle}
-							<kbd>v</kbd>
-						</button>
-					) : null}
-					<div className="file-nav">
-						<a
-							className="btn icon"
-							href={prev ? href(fileRoute({ path: prev.path })) : undefined}
-							aria-disabled={!prev}
-							title={`${S.prevFile} (${S.keyHint("k")})`}
-							aria-label={S.prevFile}
-						>
-							<Icon name="prev" />
-						</a>
-						<span className="file-nav-pos num">
-							{position >= 0 ? `${fmt(position + 1)} / ${fmt(reading.length)}` : "–"}
-						</span>
-						<a
-							className="btn icon"
-							href={next ? href(fileRoute({ path: next.path })) : undefined}
-							aria-disabled={!next}
-							title={`${S.nextFile} (${S.keyHint("j")})`}
-							aria-label={S.nextFile}
-						>
-							<Icon name="next" />
+		// The space below the code lets its last lines reach the place `n` / `p` scroll a change to.
+		<article className="min-h-full bg-background pb-[40vh]" data-path={view.path}>
+			<header className="file-head sticky top-0 z-10 flex flex-col gap-2 border-b bg-background px-4 py-2">
+				<div className="flex min-w-0 items-center gap-2">
+					<div className="flex min-w-0 items-center gap-1">
+						<PathCrumbs path={view.path} onDir={dirHref} />
+						<CopyButton text={view.path} />
+					</div>
+					<div className="ml-auto flex shrink-0 items-center gap-2">
+						{file ? (
+							<Toggle
+								variant="outline"
+								size="sm"
+								pressed={mark === "viewed"}
+								onPressedChange={(pressed) => setViewed(file, pressed)}
+								aria-keyshortcuts="v"
+								data-testid="viewed-toggle"
+							>
+								{mark === "viewed" ? (
+									<CircleCheckIcon data-icon="inline-start" />
+								) : mark === "stale" ? (
+									<CircleAlertIcon data-icon="inline-start" className="text-modified" />
+								) : (
+									<CircleIcon data-icon="inline-start" className="text-muted-foreground" />
+								)}
+								{mark === "stale" ? S.changedSinceViewed : S.viewedToggle}
+								<Kbd aria-hidden="true" className="group-aria-pressed/toggle:bg-background">
+									v
+								</Kbd>
+							</Toggle>
+						) : null}
+						<div className="flex items-center">
+							<FileStep
+								href={prev ? href(fileRoute({ path: prev.path })) : undefined}
+								label={S.prevFile}
+								keys="k"
+							>
+								<ChevronLeftIcon />
+							</FileStep>
+							<span className="min-w-16 px-1 text-center text-xs whitespace-nowrap text-muted-foreground tabular-nums">
+								{position >= 0 ? `${fmt(position + 1)} / ${fmt(reading.length)}` : "–"}
+							</span>
+							<FileStep
+								href={next ? href(fileRoute({ path: next.path })) : undefined}
+								label={S.nextFile}
+								keys="j"
+							>
+								<ChevronRightIcon />
+							</FileStep>
+						</div>
+						<a className={buttonLook({ variant: "outline", size: "sm" })} href={mapHref()}>
+							<MapIcon data-icon="inline-start" />
+							{S.showOnMap}
 						</a>
 					</div>
-					<a className="btn" href={mapHref()}>
-						<Icon name="map" />
-						{S.showOnMap}
-					</a>
 				</div>
-				<div className="file-head-row file-head-meta">
+				<div className="flex min-h-7 flex-wrap items-center gap-2">
 					<StatusBadge status={view.status} {...(statusLabel ? { label: statusLabel } : {})} />
 					{file ? <Delta added={file.added} deleted={file.deleted} /> : null}
 					{chapter ? (
 						<a
-							className="file-chapter"
+							className="max-w-full min-w-0 truncate rounded-sm py-1 text-xs text-muted-foreground underline decoration-muted-foreground/40 underline-offset-2 outline-none hover:text-foreground hover:decoration-current focus-visible:ring-3 focus-visible:ring-ring/50"
 							href={href(mapRoute({ group: chapter.id, grouping: "chapters" }))}
 						>
 							{S.chapter} {chapterIndex + 1}: {chapter.title}
 						</a>
 					) : null}
-					{view.oldPath ? (
-						<span className="file-renamed">{S.renamedFrom(view.oldPath)}</span>
-					) : null}
-					{view.status === "unchanged" ? (
-						<span className="file-note">{S.unchangedHint}</span>
-					) : null}
-					{excluded ? (
-						<span className="file-note">
-							{S.excludedHint(categoryLabel(meta.categories, view.category))}
+					{note ? (
+						<span
+							className="min-w-0 flex-1 basis-48 truncate text-xs text-muted-foreground"
+							title={note}
+						>
+							{note}
 						</span>
 					) : null}
-					<span className="file-head-spacer" />
 					{view.lines.length > 0 ? (
-						<div className="code-controls">
+						<div className="ml-auto flex items-center gap-2">
 							{!plain ? (
-								<fieldset className="segmented" aria-label={S.modeLabel}>
-									<button
-										type="button"
-										aria-pressed={mode === "full"}
-										onClick={() => setMode("full")}
-									>
-										{S.modeFull}
-									</button>
-									<button
-										type="button"
-										aria-pressed={mode === "changes"}
-										onClick={() => setMode("changes")}
-									>
-										{S.modeChanges}
-									</button>
-								</fieldset>
+								<ToggleGroup
+									variant="outline"
+									size="sm"
+									spacing={0}
+									value={[mode]}
+									// A press on the chosen option would leave none: the mode stays.
+									onValueChange={([chosen]) => {
+										if (chosen === "full" || chosen === "changes") setMode(chosen);
+									}}
+									aria-label={S.modeLabel}
+								>
+									<ToggleGroupItem value="full">{S.modeFull}</ToggleGroupItem>
+									<ToggleGroupItem value="changes">{S.modeChanges}</ToggleGroupItem>
+								</ToggleGroup>
 							) : null}
 							{!plain && hasRemoved ? (
-								<button
-									type="button"
-									className="btn"
-									aria-pressed={showRemoved}
-									onClick={() => setShowRemoved(!showRemoved)}
+								<Toggle
+									variant="outline"
+									size="sm"
+									pressed={showRemoved}
+									onPressedChange={setShowRemoved}
 								>
 									{S.showRemoved}
-								</button>
+								</Toggle>
 							) : null}
-							<button
-								type="button"
-								className="btn"
-								aria-pressed={wrap}
-								onClick={() => setWrap(!wrap)}
-							>
+							<Toggle variant="outline" size="sm" pressed={wrap} onPressedChange={setWrap}>
 								{S.wrap}
-							</button>
+							</Toggle>
 							{changeCount > 0 ? (
-								<div className="change-nav">
-									<button
-										type="button"
-										className="btn icon"
-										title={`${S.prevChange} (${S.keyHint("p")})`}
-										aria-label={S.prevChange}
-										onClick={() => {
-											const i = jumpToChange(-1);
-											if (i !== null) setChangeIndex(i);
-										}}
+								<div className="flex items-center">
+									<Tooltip>
+										<TooltipTrigger
+											render={
+												<Button
+													variant="ghost"
+													size="icon-sm"
+													aria-label={S.prevChange}
+													aria-keyshortcuts="p"
+													onClick={() => toChange(-1)}
+												/>
+											}
+										>
+											<ChevronUpIcon />
+										</TooltipTrigger>
+										<Hint label={S.prevChange} keys="p" />
+									</Tooltip>
+									<span
+										className="min-w-28 px-1 text-center text-xs whitespace-nowrap text-muted-foreground tabular-nums"
+										role="status"
+										data-testid="change-pos"
 									>
-										<Icon name="up" />
-									</button>
-									<span className="change-pos num" data-testid="change-pos">
 										{changeIndex === null
 											? S.changes(changeCount)
 											: S.changeOf(changeIndex + 1, changeCount)}
 									</span>
-									<button
-										type="button"
-										className="btn icon"
-										title={`${S.nextChange} (${S.keyHint("n")})`}
-										aria-label={S.nextChange}
-										onClick={() => {
-											const i = jumpToChange(1);
-											if (i !== null) setChangeIndex(i);
-										}}
-									>
-										<Icon name="down" />
-									</button>
+									<Tooltip>
+										<TooltipTrigger
+											render={
+												<Button
+													variant="ghost"
+													size="icon-sm"
+													aria-label={S.nextChange}
+													aria-keyshortcuts="n"
+													onClick={() => toChange(1)}
+												/>
+											}
+										>
+											<ChevronDownIcon />
+										</TooltipTrigger>
+										<Hint label={S.nextChange} keys="n" />
+									</Tooltip>
 								</div>
 							) : null}
 						</div>
@@ -337,33 +505,53 @@ function Loaded({
 				</div>
 			</header>
 
-			<section className={`neighbourhood${neighbourhoodOpen ? " is-open" : ""}`}>
-				<button
-					type="button"
-					className="section-toggle"
-					aria-expanded={neighbourhoodOpen}
-					onClick={() => setNeighbourhoodOpen(!neighbourhoodOpen)}
-				>
-					<Icon name={neighbourhoodOpen ? "down" : "next"} />
-					<span>{S.neighbourhood}</span>
-				</button>
-				{neighbourhoodOpen ? <Neighbourhood view={view} neighbours={neighbours} /> : null}
-			</section>
+			<Collapsible
+				render={<section />}
+				className="border-b"
+				open={neighbourhoodOpen}
+				onOpenChange={setNeighbourhoodOpen}
+			>
+				<h3 className="px-4 py-1">
+					<CollapsibleTrigger
+						render={
+							<Button
+								variant="ghost"
+								size="sm"
+								// Open is this section's usual state, not a pressed button: no fill for it.
+								className="-ml-2.5 aria-expanded:bg-transparent aria-expanded:hover:bg-muted dark:aria-expanded:hover:bg-muted/50"
+							/>
+						}
+					>
+						<ChevronRightIcon
+							data-icon="inline-start"
+							className="text-muted-foreground transition-transform group-aria-expanded/button:rotate-90 motion-reduce:transition-none"
+						/>
+						{S.neighbourhood}
+					</CollapsibleTrigger>
+				</h3>
+				<CollapsibleContent className="h-(--collapsible-panel-height) overflow-hidden px-4 pb-4 transition-[height] duration-150 ease-out data-ending-style:h-0 data-starting-style:h-0 motion-reduce:transition-none">
+					<Neighbourhood view={view} neighbours={neighbours} />
+				</CollapsibleContent>
+			</Collapsible>
 
-			{view.status === "deleted" ? <div className="banner">{S.deletedFile}</div> : null}
-			{view.truncated ? <div className="banner">{S.truncatedFile(view.lines.length)}</div> : null}
-			{view.binary ? (
-				<div className="banner">{S.binaryFile(S.bytes(view.size))}</div>
-			) : view.lines.length === 0 ? (
-				<div className="banner">{S.emptyFile}</div>
-			) : (
-				<CodeView
-					view={view}
-					options={{ mode, showRemoved, wrap, plain }}
-					target={line}
-					links={links}
-				/>
-			)}
+			<div className="flex flex-col gap-3 p-4">
+				{view.status === "deleted" ? <Note icon={<FileXIcon />}>{S.deletedFile}</Note> : null}
+				{view.truncated ? (
+					<Note icon={<ScissorsIcon />}>{S.truncatedFile(view.lines.length)}</Note>
+				) : null}
+				{view.binary ? (
+					<Note icon={<BinaryIcon />}>{S.binaryFile(S.bytes(view.size))}</Note>
+				) : view.lines.length === 0 ? (
+					<Note icon={<FileIcon />}>{S.emptyFile}</Note>
+				) : (
+					<CodeView
+						view={view}
+						options={{ mode, showRemoved, wrap, plain }}
+						target={line}
+						links={links}
+					/>
+				)}
+			</div>
 		</article>
 	);
 }
@@ -385,15 +573,19 @@ export function FilePage({ route }: { route: Route }) {
 	if (resource.status === "error") {
 		if (resource.error instanceof ApiError && resource.error.status === 404)
 			return (
-				<div className="state" role="alert">
-					<h2>{S.fileNotFound}</h2>
-					<p>{S.fileNotFoundHint(path, model.range.head.sha.slice(0, 10))}</p>
-					<div className="actions">
-						<a className="btn" href={href(mapRoute({ group: "", grouping: "chapters" }))}>
+				<Notice
+					title={S.fileNotFound}
+					actions={
+						<a
+							className={buttonLook({ variant: "outline" })}
+							href={href(mapRoute({ group: "", grouping: "chapters" }))}
+						>
 							{S.toMap}
 						</a>
-					</div>
-				</div>
+					}
+				>
+					{S.fileNotFoundHint(path, model.range.head.sha.slice(0, 10))}
+				</Notice>
 			);
 		return <ErrorView error={resource.error} retry={resource.retry} />;
 	}

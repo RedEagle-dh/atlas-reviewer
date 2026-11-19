@@ -2,11 +2,11 @@
  * The code: line numbers, highlighted tokens (colours from the file's palette, light and dark),
  * change marks in the gutter and as a tint, removed lines inline, folds, import links. Rows are
  * rendered in chunks with `content-visibility: auto`, so a 1 600-line file scrolls smoothly and
- * the browser's find-in-page still sees every line.
+ * the browser's find-in-page still sees every line. How a row looks is in `styles/code.css`.
  */
+import { ArrowUpRightIcon, UnfoldVerticalIcon } from "lucide-react";
 import { memo, useEffect, useMemo, useState } from "react";
 import type { FileView, TokenLine } from "../../../core/types";
-import { Icon } from "../../components/icons";
 import { baseName } from "../../lib/files";
 import { fileRoute } from "../../router";
 import { useAtlas } from "../../state/atlas";
@@ -22,19 +22,23 @@ export interface CodeOptions {
 }
 
 const CHUNK = 150;
+/** The heights `styles/code.css` gives a row and a fold: a chunk off screen is reserved their sum. */
 const LINE_H = 20;
 const FOLD_H = 26;
 const CONTEXT = 3;
 const COLOUR = /^#[0-9a-f]{3,8}$/i;
 
-/** One CSS rule per palette entry: `light-dark()` picks the colour for the active scheme. */
+/**
+ * One CSS rule per palette entry: `light-dark()` picks the colour for the active scheme. Entry 0
+ * is the plain text colour, so it also colours the view itself (a token without a span inherits it).
+ */
 export function paletteCss(palette: FileView["palette"]): string {
 	return palette
-		.map(([light, dark], i) =>
-			COLOUR.test(light) && COLOUR.test(dark)
-				? `.code-view .c${i}{color:light-dark(${light},${dark})}`
-				: "",
-		)
+		.map(([light, dark], i) => {
+			if (!COLOUR.test(light) || !COLOUR.test(dark)) return "";
+			const selector = i === 0 ? ".code-view,.code-view .c0" : `.code-view .c${i}`;
+			return `${selector}{color:light-dark(${light},${dark})}`;
+		})
 		.join("\n");
 }
 
@@ -88,9 +92,10 @@ const CodeRow = memo(function CodeRow({
 				type="button"
 				className="ln-fold"
 				data-row={index}
-				title={S.foldedTitle}
+				aria-expanded="false"
 				onClick={() => onUnfold(row.from)}
 			>
+				<UnfoldVerticalIcon className="ln-fold-icon" aria-hidden="true" />
 				<span className="ln-fold-text">{S.folded(n)}</span>
 			</button>
 		);
@@ -130,7 +135,7 @@ const CodeRow = memo(function CodeRow({
 			data-anchor={row.anchor ? (row.block ?? undefined) : undefined}
 		>
 			<span className="ln-mark" />
-			<a className="ln-no num" href={href(fileRoute({ path, line: row.line }))} tabIndex={-1}>
+			<a className="ln-no" href={href(fileRoute({ path, line: row.line }))} tabIndex={-1}>
 				{row.line}
 			</a>
 			<span className="ln-code">
@@ -142,7 +147,7 @@ const CodeRow = memo(function CodeRow({
 						href={href(fileRoute({ path: t }))}
 						title={S.importLink(t)}
 					>
-						<Icon name="goto" />
+						<ArrowUpRightIcon aria-hidden="true" />
 						{baseName(t)}
 					</a>
 				))}
@@ -185,15 +190,16 @@ export function CodeView({
 		if (fold && fold.kind === "fold") setUnfolded((prev) => new Set([...prev, fold.from]));
 	}, [rows, target]);
 
-	// Bring the target line into view (only when it is not already visible); again after the rows
-	// changed, because a fold that hid it has just opened.
+	// Bring the target line into view (only when it is not already visible below the sticky header);
+	// again after the rows changed, because a fold that hid it has just opened.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `rows` is the trigger, not an input.
 	useEffect(() => {
 		if (target === undefined) return;
 		const el = document.querySelector<HTMLElement>(`.code-view [data-line="${target}"]`);
 		if (!el) return;
+		const header = document.querySelector(".file-head")?.getBoundingClientRect().bottom ?? 0;
 		const rect = el.getBoundingClientRect();
-		if (rect.top < 140 || rect.bottom > window.innerHeight - 20)
+		if (rect.top < header || rect.bottom > window.innerHeight - 20)
 			el.scrollIntoView({ block: "center" });
 	}, [target, rows]);
 
