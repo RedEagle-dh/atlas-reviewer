@@ -174,7 +174,14 @@ function FileComments({
 						fallbackFocus="[data-comment-file]"
 					/>
 				))}
-				{composer ? <Composer path={view.path} composer={composer} lines={view.lines} /> : null}
+				{composer ? (
+					<Composer
+						path={view.path}
+						composer={composer}
+						lines={view.lines}
+						deleted={view.status === "deleted"}
+					/>
+				) : null}
 			</div>
 		</section>
 	);

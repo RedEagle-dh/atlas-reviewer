@@ -539,7 +539,12 @@ export function CodeView({
 												/>
 											))}
 											{composing ? (
-												<Composer path={path} composer={composer} lines={view.lines} />
+												<Composer
+													path={path}
+													composer={composer}
+													lines={view.lines}
+													deleted={view.status === "deleted"}
+												/>
 											) : null}
 										</div>
 									</div>

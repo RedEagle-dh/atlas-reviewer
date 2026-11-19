@@ -79,11 +79,14 @@ export function Composer({
 	path,
 	composer,
 	lines,
+	deleted,
 }: {
 	path: string;
 	composer: ComposerState;
 	/** The file's lines as the page shows them: the comment quotes its own. */
 	lines: readonly TokenLine[];
+	/** The range deletes the file: the page shows its lines as the range's base has them. */
+	deleted: boolean;
 }) {
 	const { add, failure } = useCommentActions();
 	const { line, endLine, memory } = composer;
@@ -92,8 +95,8 @@ export function Composer({
 	// lines, and the composer says so instead of quietly quoting them. A file the range deletes is
 	// shown as the range's base has it, every other file as its head has it: two ranges with one
 	// head show other lines only of a file they delete.
-	const { model, byPath } = useAtlas();
-	const at = byPath.get(path)?.status === "deleted" ? model.range.base.sha : model.range.head.sha;
+	const { range } = useAtlas().model;
+	const at = deleted ? range.base.sha : range.head.sha;
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `composer` is the trigger — lines chosen anew (a shift-click) start a new note.
 	useEffect(() => {
 		memory.at ??= at;
@@ -105,7 +108,8 @@ export function Composer({
 	// comment on the whole file.
 	const problem =
 		memory.problem !== null && composer.lost
-			? `${memory.problem} ${S.composerLinesGone}`
+			? // What the server said may end without a full stop.
+				`${memory.problem.replace(/([^.!?])$/, "$1.")} ${S.composerLinesGone}`
 			: (memory.problem ?? hint);
 	// Once: a draft that waits on a file the reader comes back to must not take the focus (and
 	// the scroll position) every time. The editor has read the wish by the time this runs.

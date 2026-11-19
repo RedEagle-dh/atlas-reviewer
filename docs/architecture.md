@@ -360,10 +360,11 @@ gone moves to the comments on the whole file, which sit between "Zusammenhang" a
 "Kommentare" sheet of the header lists them all in reading order and copies them as one prompt
 (`buildPrompt`; `lib/clipboard.ts` falls back to `execCommand` outside a secure context). A new
 comment carries the two commits the page shows: when the branch has moved on, the server answers
-409, the model is loaded again and the editor keeps its text. A draft remembers the head it was
-begun at and says so when the page shows another one since (its line numbers were chosen there).
-The sheet asks the server again when it opens and when the tab comes back, so a comment written
-in another tab is in the prompt.
+409, the model is loaded again and the editor keeps its text. A draft remembers the commit its
+lines were read off (the head; the base for a file the range deletes) and says so when the page
+reads them off another one since. The sheet asks the server again when it opens and when the tab
+comes back, so a comment written in another tab is in the prompt; until the answer is there it
+does not copy or delete, and when no answer comes it says that its list may be behind.
 
 ### Adding a page (a view with a route)
 
