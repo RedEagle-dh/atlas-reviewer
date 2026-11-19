@@ -19,6 +19,7 @@ import { ErrorView, Loading, Notice } from "./components/states";
 import { shortSha } from "./lib/files";
 import { mapRoute, type Route, readFileParams, withRange } from "./router";
 import { AtlasContext, useAtlasValue, useViewedState } from "./state/atlas";
+import { CommentsProvider } from "./state/comments";
 import { ResolvedThemeProvider, type Theme, useCategories, useFlag, useTheme } from "./state/prefs";
 import { useResource } from "./state/resource";
 import { hrefOf, navigate, useRoute, useScrollMemory } from "./state/route";
@@ -164,8 +165,7 @@ function Shell({
 			<SidebarProvider
 				open={sidebarOpen}
 				onOpenChange={setSidebarOpen}
-				// The sidebar slides in and out; not for a reader who asked for less motion.
-				className="h-svh motion-reduce:**:data-[slot=sidebar-container]:transition-none motion-reduce:**:data-[slot=sidebar-gap]:transition-none"
+				className="h-svh"
 				style={SIDEBAR_WIDTH}
 			>
 				{/*
@@ -264,20 +264,27 @@ function Content({ theme, setTheme }: { theme: Theme; setTheme: (theme: Theme) =
 				}
 			/>
 		);
-	if (model.status === "loading") return <Loading />;
-	if (model.status === "error") return <ErrorView error={model.error} retry={model.retry} />;
+	// Above the model's states: the comments belong to the review and stay while a range loads.
 	return (
-		<Shell
-			meta={meta.value}
-			model={model.value}
-			rangeId={rangeId}
-			route={route}
-			reloadModel={reloadModel}
-			moved={moved}
-			onDismissMoved={dismissMoved}
-			theme={theme}
-			setTheme={setTheme}
-		/>
+		<CommentsProvider rangeId={rangeId}>
+			{model.status === "loading" ? (
+				<Loading />
+			) : model.status === "error" ? (
+				<ErrorView error={model.error} retry={model.retry} />
+			) : (
+				<Shell
+					meta={meta.value}
+					model={model.value}
+					rangeId={rangeId}
+					route={route}
+					reloadModel={reloadModel}
+					moved={moved}
+					onDismissMoved={dismissMoved}
+					theme={theme}
+					setTheme={setTheme}
+				/>
+			)}
+		</CommentsProvider>
 	);
 }
 

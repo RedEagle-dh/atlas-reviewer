@@ -64,7 +64,7 @@ let firstHead = "";
 /** A session with a data directory of its own, so every group of tests starts without comments. */
 const open = (name: string): ReviewSession =>
 	new ReviewSession(review, { dataDir: join(root, name), importCache: null, highlighter: plain });
-const fileOf = (name: string): string => join(root, name, "state", "comments-test.comments.json");
+const fileOf = (name: string): string => join(root, name, "comments", "comments-test.json");
 const onDisk = async (name: string): Promise<unknown> =>
 	JSON.parse(await Bun.file(fileOf(name)).text());
 

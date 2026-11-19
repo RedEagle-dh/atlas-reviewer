@@ -10,17 +10,12 @@
 @import "shadcn/tailwind.css";
 
 /*
- * TRANSITIONAL: the stylesheets of the views that are not migrated to Tailwind yet. In the base
- * layer, so every utility wins over them. Deleted together with the last old class name.
+ * What utilities do not fit: React Flow's own sheet, the rows of the code view, the map's nodes
+ * and lines. All three in the components layer: above Tailwind's reset (which would otherwise
+ * take React Flow's margins and paddings away), below every utility. React Flow's sheet first, so
+ * the map's rules win over it.
  */
-@import "./tokens.css" layer(base);
-@import "./base.css" layer(base);
-
-/*
- * What utilities do not fit: React Flow's own sheet (base layer, so the map's rules and every
- * utility win over it), the rows of the code view, the map's nodes and lines.
- */
-@import "@xyflow/react/dist/base.css" layer(base);
+@import "@xyflow/react/dist/base.css" layer(components);
 @import "./code.css" layer(components);
 @import "./map.css" layer(components);
 
@@ -179,3 +174,20 @@
 		@apply bg-background text-foreground text-sm antialiased;
 	}
 }
+
+/*
+ * A reader who asked for less motion: menus, dialogs and tooltips appear without their fade.
+ * `!important` is the point here: it has to win over every animation a utility sets.
+ */
+/* biome-ignore-start lint/complexity/noImportantStyles: see above */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+}
+/* biome-ignore-end lint/complexity/noImportantStyles: see above */

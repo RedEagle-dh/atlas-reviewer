@@ -13,12 +13,13 @@ export interface StateStore {
 }
 
 export function createStateStore(file: string): StateStore {
-	let state: ViewedState | undefined;
+	// One read of the file for everyone: a second read still in flight when a write lands would
+	// bring the old marks back after it.
+	let loaded: Promise<ViewedState> | undefined;
 	// Writes run one after the other, so two quick toggles cannot interleave.
 	let queue: Promise<unknown> = Promise.resolve();
 
-	const load = async (): Promise<ViewedState> => {
-		if (state) return state;
+	const read = async (): Promise<ViewedState> => {
 		// No prototype: a path such as `__proto__` is an ordinary key here.
 		const viewed: Record<string, string> = Object.create(null);
 		try {
@@ -32,8 +33,11 @@ export function createStateStore(file: string): StateStore {
 		} catch {
 			// No state yet (or unreadable): nothing viewed.
 		}
-		state = { viewed };
-		return state;
+		return { viewed };
+	};
+	const load = (): Promise<ViewedState> => {
+		loaded ??= read();
+		return loaded;
 	};
 
 	return {

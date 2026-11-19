@@ -834,9 +834,7 @@ function MapCanvas({ route }: { route: Route }) {
 						pannable
 						zoomable
 						ariaLabel={S.minimap}
-						// The margin is React Flow's own (`MINIMAP`), said again: Tailwind's reset of every
-						// margin shares the base layer with React Flow's sheet and wins there.
-						className="m-[15px] overflow-hidden rounded-lg border bg-card shadow-sm"
+						className="overflow-hidden rounded-lg border bg-card shadow-sm"
 						nodeClassName={(n) =>
 							n.type === "frame"
 								? "mm-frame"

@@ -69,7 +69,7 @@ const ResolvedThemeContext = createContext<ResolvedTheme>("light");
 /** Provided once by `app.tsx` with what `useTheme()` resolved to. */
 export const ResolvedThemeProvider = ResolvedThemeContext.Provider;
 
-/** `light` or `dark`, for what takes the theme as a value (React Flow's `colorMode`, the toaster). */
+/** `light` or `dark`, for what takes the theme as a value (React Flow's `forceColorMode`, the toaster). */
 export function useResolvedTheme(): ResolvedTheme {
 	return useContext(ResolvedThemeContext);
 }

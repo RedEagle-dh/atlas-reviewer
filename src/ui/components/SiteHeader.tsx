@@ -52,8 +52,7 @@ function CategoryFilter() {
 										onPressedChange={() => toggleCategory(c.id)}
 										aria-label={S.categoryFiles(c.label, count)}
 										data-category={c.id}
-										// The fill says "on" and nothing else: hovering a switch that is off must not look like on.
-										className="shrink-0 gap-1.5 text-muted-foreground hover:bg-transparent aria-pressed:text-foreground aria-pressed:hover:bg-muted"
+										className="shrink-0 gap-1.5 text-muted-foreground aria-pressed:text-foreground"
 									/>
 								}
 							>

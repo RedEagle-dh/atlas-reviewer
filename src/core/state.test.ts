@@ -30,6 +30,16 @@ describe("createStateStore", () => {
 		expect(Object.keys((await createStateStore(file).read()).viewed)).toHaveLength(20);
 	});
 
+	test("a read that started before a write does not bring the old marks back", async () => {
+		const file = join(dir, "race.json");
+		await createStateStore(file).set("old.ts", "sha-old");
+		// A fresh start: the first read and the first write arrive together.
+		const store = createStateStore(file);
+		const [, written] = await Promise.all([store.read(), store.set("new.ts", "sha-new")]);
+		expect(written.viewed).toEqual({ "old.ts": "sha-old", "new.ts": "sha-new" });
+		expect((await store.read()).viewed).toEqual({ "old.ts": "sha-old", "new.ts": "sha-new" });
+	});
+
 	test("a path named `__proto__` is an ordinary key", async () => {
 		const file = join(dir, "proto.json");
 		const store = createStateStore(file);

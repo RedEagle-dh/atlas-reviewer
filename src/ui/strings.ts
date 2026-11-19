@@ -55,11 +55,13 @@ export const S = {
 	search: "Suchen",
 	searchShortcut: (mac: boolean) => (mac ? "⌘K" : "Strg K"),
 	progress: (seen: number, total: number) => `${fmt(seen)} von ${fmt(total)} gesehen`,
-	progressShort: (seen: number, total: number) => `${fmt(seen)}/${fmt(total)} gesehen`,
 	theme: { system: "Wie das System", light: "Hell", dark: "Dunkel" },
 	themeToggle: (current: string) => `Farbschema: ${current} (wechseln)`,
 	sidebarShow: "Seitenleiste zeigen",
 	sidebarHide: "Seitenleiste ausblenden",
+	/** What a screen reader hears for the sidebar as a sheet (narrow windows). */
+	sidebarTitle: "Seitenleiste",
+	sidebarDescription: "Bereich, Kapitel und Dateien des Reviews.",
 	skipFiles: "Dateiliste überspringen",
 
 	// Sidebar
@@ -68,8 +70,6 @@ export const S = {
 	chapterProgress: (seen: number, total: number) => `${fmt(seen)}/${fmt(total)}`,
 	chapterOnMap: "Kapitel auf der Karte zeigen",
 	folderOnMap: "Ordner auf der Karte zeigen",
-	collapse: "Zuklappen",
-	expand: "Aufklappen",
 	noVisibleFiles: "Keine Datei in den gewählten Kategorien.",
 	noVisibleFilesHint: "Oben eine Kategorie einblenden.",
 
@@ -90,7 +90,6 @@ export const S = {
 	} satisfies Record<FileStatus | "unchanged", string>,
 	viewed: "gesehen",
 	changedSinceViewed: "seit dem Ansehen geändert",
-	lines: (added: number, deleted: number) => `+${fmt(added)} −${fmt(deleted)}`,
 	linesTitle: (added: number, deleted: number) =>
 		`${plural(added, "Zeile", "Zeilen")} hinzu, ${plural(deleted, "Zeile", "Zeilen")} entfernt`,
 	files: (n: number) => plural(n, "Datei", "Dateien"),

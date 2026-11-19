@@ -63,9 +63,7 @@ export class ReviewSession {
 		this.dataDir = options.dataDir ?? DEFAULT_DATA_DIR;
 		this.highlighter = options.highlighter ?? createShikiHighlighter();
 		this.state = createStateStore(resolve(this.dataDir, "state", `${review.id}.json`));
-		this.commentStore = createCommentStore(
-			resolve(this.dataDir, "state", `${review.id}.comments.json`),
-		);
+		this.commentStore = createCommentStore(resolve(this.dataDir, "comments", `${review.id}.json`));
 		if (options.importCache !== undefined) this.importCache = Promise.resolve(options.importCache);
 	}
 
