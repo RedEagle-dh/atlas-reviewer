@@ -48,8 +48,9 @@ function UnknownView({ route }: { route: Route }) {
 			title={S.unknownView}
 			actions={
 				// A link that looks like a button: it stays a link for a screen reader and a middle click.
+				// Through `cn`, as `Button` does: the variant's border replaces the base's transparent one.
 				<a
-					className={buttonVariants({ variant: "outline" })}
+					className={cn(buttonVariants({ variant: "outline" }))}
 					href={hrefOf(mapRoute({ group: "", grouping: "chapters" }))}
 				>
 					{S.toMap}
@@ -170,16 +171,18 @@ function Shell({
 				{/*
 				 * The sidebar comes first in the document, with a link per file: the first Tab stop
 				 * takes a keyboard past them, to the header bar and the view. Not an `href`: the hash
-				 * is the route.
+				 * is the route. Not while the sidebar is closed: nothing is in the way then.
 				 */}
-				<Button
-					variant="outline"
-					size="sm"
-					className="sr-only focus-visible:not-sr-only focus-visible:fixed focus-visible:top-2 focus-visible:left-2 focus-visible:z-50 focus-visible:h-7 focus-visible:px-2.5"
-					onClick={() => inset.current?.focus()}
-				>
-					{S.skipFiles}
-				</Button>
+				{sidebarOpen ? (
+					<Button
+						variant="outline"
+						size="sm"
+						className="sr-only focus-visible:not-sr-only focus-visible:fixed focus-visible:top-2 focus-visible:left-2 focus-visible:z-50 focus-visible:h-7 focus-visible:px-2.5"
+						onClick={() => inset.current?.focus()}
+					>
+						{S.skipFiles}
+					</Button>
+				) : null}
 				<AppSidebar current={current} />
 				<SidebarInset ref={inset} tabIndex={-1} className="min-w-0 overflow-hidden outline-none">
 					<SiteHeader onSearch={openSearch} theme={theme} onTheme={setTheme} />

@@ -75,7 +75,7 @@ function RangeSwitch() {
 												<span className="text-xs text-muted-foreground">{range.note}</span>
 											) : null}
 											{range.id === rangeId ? (
-												<span className="text-xs text-muted-foreground tabular-nums">
+												<span className="font-mono text-xs text-muted-foreground">
 													{S.rangeShas(
 														`${model.range.base.ref} (${shortSha(model.range.base.sha)})`,
 														`${model.range.head.ref} (${shortSha(model.range.head.sha)})`,
@@ -105,6 +105,14 @@ const MAP_LINK =
 
 /** The track of a progress bar on the sidebar's ground, where the bar's own `bg-muted` is lost. */
 const TRACK = "**:data-[slot=progress-track]:bg-sidebar-border";
+
+/**
+ * Secondary text inside a row (a directory hint, a count, the name of a viewed file): muted on
+ * the sidebar's ground. On the fill of a hovered or current row it takes the fill's own text
+ * colour, as the sidebar's badges do: muted on that fill falls below a contrast of 4.5:1.
+ */
+const QUIET =
+	"text-muted-foreground group-hover/menu-button:text-sidebar-accent-foreground group-data-active/menu-button:text-sidebar-accent-foreground";
 
 function MapLink({
 	as: Action,
@@ -172,11 +180,14 @@ const FileRow = memo(function FileRow({
 				}
 			>
 				<StatusMark status={file.status} />
-				<span className={cn("truncate", mark === "viewed" && "text-muted-foreground")}>
-					{baseName(file.path)}
-				</span>
+				<span className={cn("truncate", mark === "viewed" && QUIET)}>{baseName(file.path)}</span>
 				{/* Cut from the left: the end of a directory says more than its start. */}
-				<span className="min-w-0 flex-1 truncate text-left text-xs font-normal text-muted-foreground [direction:rtl]">
+				<span
+					className={cn(
+						"min-w-0 flex-1 truncate text-left text-xs font-normal [direction:rtl]",
+						QUIET,
+					)}
+				>
 					{ltr(hint ?? "")}
 				</span>
 				<SizeBar added={file.added} deleted={file.deleted} />
@@ -249,7 +260,7 @@ function ChapterList({ current }: { current: string | null }) {
 						// The pointer of the file links around it: one list, one cursor.
 						className="group/label h-auto min-h-8 w-full cursor-pointer items-start gap-2 py-1.5 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
 					>
-						<span className="w-4 shrink-0 text-right text-xs/5 text-muted-foreground tabular-nums">
+						<span className="w-4 shrink-0 text-right text-xs/5 text-muted-foreground tabular-nums group-hover/label:text-sidebar-accent-foreground">
 							{index}
 						</span>
 						<span className="min-w-0 flex-1 leading-5 font-semibold">{chapter.title}</span>
@@ -335,9 +346,7 @@ function DirBranch({
 							<span className="truncate" title={dir.dir}>
 								{dir.name}
 							</span>
-							<span className="ml-auto text-xs text-muted-foreground tabular-nums">
-								{fmt(dir.count)}
-							</span>
+							<span className={cn("ml-auto text-xs tabular-nums", QUIET)}>{fmt(dir.count)}</span>
 						</SidebarMenuButton>
 						<MapLink
 							as={SidebarMenuAction}
@@ -346,8 +355,12 @@ function DirBranch({
 							className="pointer-fine:peer-hover/menu-button:opacity-100"
 						/>
 						<CollapsibleContent>
-							{/* One guide line per level, under the folder's chevron; no room wasted on depth. */}
-							<SidebarMenuSub className="mx-0 ml-3.5 gap-0 px-0 py-0">
+							{/*
+							 * One guide line per level, under the folder's chevron; no room wasted on depth.
+							 * A margin, not the component's 1px shift: the shift adds up with every level
+							 * and pushes deep rows out of the column, towards the sidebar's edge.
+							 */}
+							<SidebarMenuSub className="mx-0 ml-3.75 translate-x-0 gap-0 px-0 py-0">
 								<DirBranch node={dir} current={current} closed={closed} toggle={toggle} />
 							</SidebarMenuSub>
 						</CollapsibleContent>

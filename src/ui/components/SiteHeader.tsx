@@ -58,7 +58,8 @@ function CategoryFilter() {
 								}
 							>
 								{c.label}
-								<span className="text-xs font-normal text-muted-foreground tabular-nums">
+								{/* On the fill of a pressed switch the count takes the label's colour: muted is too faint there. */}
+								<span className="text-xs font-normal text-muted-foreground tabular-nums group-aria-pressed/toggle:text-foreground">
 									{fmt(count)}
 								</span>
 							</TooltipTrigger>
@@ -104,10 +105,10 @@ function ThemeMenu({ theme, onTheme }: { theme: Theme; onTheme: (theme: Theme) =
 					onValueChange={(value) => onTheme(THEMES.find((t) => t === value) ?? "system")}
 				>
 					{THEMES.map((t) => {
-						const Icon = THEME_ICON[t];
+						const ThemeIcon = THEME_ICON[t];
 						return (
 							<DropdownMenuRadioItem key={t} value={t} closeOnClick>
-								<Icon aria-hidden="true" />
+								<ThemeIcon aria-hidden="true" />
 								{S.theme[t]}
 							</DropdownMenuRadioItem>
 						);
@@ -143,9 +144,11 @@ export function SiteHeader({
 			<Separator orientation="vertical" className="h-4 data-vertical:self-center" />
 			{sidebarShown ? null : (
 				// Without the sidebar the page still says which review it shows. It gives way before
-				// the categories do, and leaves a bar that has no room for it.
+				// the categories do, and leaves a bar that has no room for it. It grows from nothing up
+				// to its own width, so it takes only what the categories leave: a title that shrank
+				// side by side with them cut the last category off while it still had room to give.
 				<h1
-					className="mr-1 hidden min-w-24 shrink-[4] truncate text-sm font-semibold @lg/header:block"
+					className="mr-1 hidden max-w-max min-w-24 flex-1 truncate text-sm font-semibold @lg/header:block"
 					title={`${meta.title} (${meta.repoPath})`}
 				>
 					{meta.title}

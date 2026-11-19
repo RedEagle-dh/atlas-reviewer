@@ -11,6 +11,7 @@ import {
 	CommandList,
 } from "@/components/ui/command";
 import { Kbd } from "@/components/ui/kbd";
+import { cn } from "@/lib/utils";
 import { viewedMark } from "../lib/files";
 import { fuzzyFilter } from "../lib/fuzzy";
 import { fileRoute } from "../router";
@@ -19,7 +20,13 @@ import { S } from "../strings";
 import { StatusMark, ViewedMark } from "./marks";
 
 /** Keeps a path left-to-right inside a box that cuts from the left (`direction: rtl`). */
-const LRM = "‎";
+const LRM = "\u200e";
+
+/**
+ * Secondary text of a result: muted, and on the fill of the selected row the row's own text
+ * colour, as the component's shortcut hint does (muted on that fill falls below 4.5:1).
+ */
+const QUIET = "text-muted-foreground group-data-selected/command-item:text-foreground";
 
 /** The path with the matched characters marked; the file name in full weight. */
 function highlight(path: string, indices: readonly number[]): ReactNode[] {
@@ -87,12 +94,12 @@ function Search({ onClose }: { onClose: () => void }) {
 							>
 								<StatusMark status={item.status} />
 								{/* Cut from the left, so a long path keeps its file name. */}
-								<span className="min-w-0 flex-1 truncate text-left text-muted-foreground [direction:rtl]">
+								<span className={cn("min-w-0 flex-1 truncate text-left [direction:rtl]", QUIET)}>
 									{LRM}
 									{highlight(item.path, match.indices)}
 									{LRM}
 								</span>
-								<span className="max-w-56 shrink-0 truncate text-xs text-muted-foreground">
+								<span className={cn("max-w-56 shrink-0 truncate text-xs", QUIET)}>
 									{chapterTitle.get(item.chapter) ?? item.chapter}
 								</span>
 								<ViewedMark mark={viewedMark(item, viewed)} />
