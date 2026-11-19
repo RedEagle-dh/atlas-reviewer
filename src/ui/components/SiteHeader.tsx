@@ -17,13 +17,13 @@ import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { Toggle } from "@/components/ui/toggle";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { categoryCounts } from "../lib/files";
+import { categoryCounts, countViewed } from "../lib/files";
+import { isMac } from "../lib/platform";
 import { useAtlas } from "../state/atlas";
 import { THEMES, type Theme } from "../state/prefs";
 import { fmt, S } from "../strings";
 import { CommentsPanel } from "./comments/CommentsPanel";
-
-const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+import { RangeSwitch } from "./RangeSwitch";
 
 /** One switch per category that has files; what is off is missing from the list, map and search. */
 function CategoryFilter() {
@@ -129,7 +129,7 @@ export function SiteHeader({
 	theme: Theme;
 	onTheme: (theme: Theme) => void;
 }) {
-	const { meta } = useAtlas();
+	const { meta, visible, viewed } = useAtlas();
 	const { open, isMobile } = useSidebar();
 	// Below the sidebar's breakpoint it is a sheet that the switch opens; it is never "shown" then.
 	const sidebarShown = open && !isMobile;
@@ -148,15 +148,27 @@ export function SiteHeader({
 				// the categories do, and leaves a bar that has no room for it. It grows from nothing up
 				// to its own width, so it takes only what the categories leave: a title that shrank
 				// side by side with them cut the last category off while it still had room to give.
-				<h1
-					className="mr-1 hidden max-w-max min-w-24 flex-1 truncate text-sm font-semibold @lg/header:block"
-					title={`${meta.title} (${meta.repoPath})`}
-				>
-					{meta.title}
-				</h1>
+				<>
+					<h1
+						className="mr-1 hidden max-w-max min-w-24 flex-1 truncate text-sm font-semibold @lg/header:block"
+						title={`${meta.title} (${meta.repoPath})`}
+					>
+						{meta.title}
+					</h1>
+					{/* And which range, with the way to another: both are in the sidebar otherwise. */}
+					<div className="hidden min-w-0 @3xl/header:flex">
+						<RangeSwitch place="header" />
+					</div>
+				</>
 			)}
 			<CategoryFilter />
 			<div className="ml-auto flex shrink-0 items-center gap-2 pl-2">
+				{sidebarShown ? null : (
+					// The sidebar's foot says how far the reader is; without it, a word here does.
+					<output className="hidden text-xs whitespace-nowrap text-muted-foreground tabular-nums @5xl/header:block">
+						{S.progressShort(countViewed(visible, viewed), visible.length)}
+					</output>
+				)}
 				<Tooltip>
 					<TooltipTrigger
 						render={

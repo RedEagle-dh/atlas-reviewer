@@ -24,6 +24,9 @@ const USAGE = `usage:
           unresolved (except those the review lists in expectedUnresolved)
   --cold  check: ignore the extraction cache on the first build (the second build reads it)`;
 
+/** What ends `serve`: Ctrl-C, a plain `kill`, the terminal that goes away. */
+const STOP_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
+
 /**
  * The tool's directory: its `bunfig.toml` registers the Tailwind plugin of the UI bundle. The
  * real path, as the working directory of a process is one: reached through a link, the two
@@ -44,9 +47,10 @@ async function serveFromToolDir(argv: string[], fileAt: number): Promise<number>
 		stdout: "inherit",
 		stderr: "inherit",
 	});
-	// A terminal's Ctrl-C reaches the child by itself; a signal sent to this process alone is passed on.
-	process.on("SIGINT", () => undefined);
-	process.on("SIGTERM", () => child.kill("SIGTERM"));
+	// Whatever asks this process to stop is passed on, and its end is the server's end. From a
+	// terminal the server gets the signal a second time, by itself: it stops once (see `serve`).
+	// Only a SIGKILL of this process cannot be passed on.
+	for (const signal of STOP_SIGNALS) process.on(signal, () => child.kill(signal));
 	return child.exited;
 }
 
@@ -136,10 +140,11 @@ async function serve(
 			console.log(`(could not run ${opener}; open the URL yourself)`);
 		}
 	}
+	// `on`, not `once`: a signal can come twice (from the terminal, and passed on by the process
+	// that started this one from another directory), and the second must not end the process
+	// while the server is still closing.
 	await new Promise<void>((resolve) => {
-		const stop = () => resolve();
-		process.once("SIGINT", stop);
-		process.once("SIGTERM", stop);
+		for (const signal of STOP_SIGNALS) process.on(signal, () => resolve());
 	});
 	await running.stop();
 	return 0;

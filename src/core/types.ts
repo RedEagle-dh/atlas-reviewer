@@ -323,6 +323,12 @@ export interface ReviewComment {
 	 */
 	range: string;
 	head: string;
+	/**
+	 * Only for a comment on a file that its range deletes: the range's base commit then. The file
+	 * as the writer saw it, and so the comment's line numbers, are that commit's (at `head` there
+	 * is no such file). Recorded by the server, so a prompt can say it whatever range is shown.
+	 */
+	base?: string;
 	/** ISO timestamps; `updatedAt` moves when the text is edited. */
 	createdAt: string;
 	updatedAt: string;
@@ -362,6 +368,11 @@ export interface CommentDraft {
 	 * not see. Without it the comment is recorded at whatever the range's head is.
 	 */
 	head?: string;
+	/**
+	 * The base commit of that model (`ReviewModel.range.base.sha`), checked the same way: a
+	 * deleted file is read from the base, so its lines move when the base does.
+	 */
+	base?: string;
 }
 
 /**

@@ -1,6 +1,6 @@
 /*
  * The rows of the code view. A sheet and not utilities, because a file has thousands of rows and
- * each stays three plain elements with one class. Surfaces and marks are theme tokens; the colours
+ * each stays a few plain elements with one class. Surfaces and marks are theme tokens; the colours
  * of the code itself (the plain text and every token) come from the file's palette, in the
  * <style> element CodeView injects.
  *
@@ -28,7 +28,7 @@
 	@apply border-ring ring-3 ring-ring/50 outline-none;
 }
 
-/* Rows off screen are not rendered; CodeView gives each chunk its real height. */
+/* Rows off screen are not rendered; CodeView reserves each chunk's height (an estimate where comment cards hang). */
 .code-chunk {
 	content-visibility: auto;
 	min-width: max-content;

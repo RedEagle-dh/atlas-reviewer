@@ -13,11 +13,18 @@ export interface StateStore {
 }
 
 export function createStateStore(file: string): StateStore {
-	// One read of the file for everyone: a second read still in flight when a write lands would
-	// bring the old marks back after it.
-	let loaded: Promise<ViewedState> | undefined;
-	// Writes run one after the other, so two quick toggles cannot interleave.
+	/**
+	 * The file holds the marks: nothing of them is kept in memory. Every request reads it first,
+	 * so a second server of the same review (on another port) sees what this one wrote instead of
+	 * writing its older marks over it. Requests run one after the other: two quick toggles cannot
+	 * interleave, and a read never brings back what a write has just replaced.
+	 */
 	let queue: Promise<unknown> = Promise.resolve();
+	const inTurn = <T>(task: () => Promise<T>): Promise<T> => {
+		const run = queue.then(task);
+		queue = run.catch(() => undefined);
+		return run;
+	};
 
 	const read = async (): Promise<ViewedState> => {
 		// No prototype: a path such as `__proto__` is an ordinary key here.
@@ -35,19 +42,14 @@ export function createStateStore(file: string): StateStore {
 		}
 		return { viewed };
 	};
-	const load = (): Promise<ViewedState> => {
-		loaded ??= read();
-		return loaded;
-	};
 
 	return {
-		async read() {
-			const current = await load();
-			return { viewed: { ...current.viewed } };
+		read() {
+			return inTurn(async () => ({ viewed: { ...(await read()).viewed } }));
 		},
 		set(path, blob) {
-			const run = queue.then(async () => {
-				const current = await load();
+			return inTurn(async () => {
+				const current = await read();
 				if (blob === null) delete current.viewed[path];
 				else current.viewed[path] = blob;
 				await mkdir(dirname(file), { recursive: true });
@@ -56,8 +58,6 @@ export function createStateStore(file: string): StateStore {
 				await rename(tmp, file);
 				return { viewed: { ...current.viewed } };
 			});
-			queue = run.catch(() => undefined);
-			return run;
 		},
 	};
 }

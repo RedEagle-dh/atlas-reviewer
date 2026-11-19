@@ -96,9 +96,11 @@ describe("readCommentDraft", () => {
 			"`snippet` must be at most 8000 characters",
 		);
 		expect(problem({ ...ok, range: 3 })).toBe("`range` must be a string");
-		// An empty `head` is no commit: "none" is said by leaving the field out.
-		for (const head of [3, null, ["f00"], ""])
-			expect(problem({ ...ok, head })).toBe("`head` must be a non-empty string");
+		// An empty `head` (or `base`) is no commit: "none" is said by leaving the field out.
+		for (const commit of [3, null, ["f00"], ""]) {
+			expect(problem({ ...ok, head: commit })).toBe("`head` must be a non-empty string");
+			expect(problem({ ...ok, base: commit })).toBe("`base` must be a non-empty string");
+		}
 	});
 
 	test("the limits are inclusive, and the text is measured after trimming", () => {
@@ -246,20 +248,33 @@ describe("createCommentStore", () => {
 		expect((await store.list()).comments.map((c) => c.text)).toEqual(["kept"]);
 	});
 
-	test("an unreadable file counts as empty, and the next write replaces it", async () => {
-		for (const [name, content] of [
-			["broken", "{ not json"],
-			["null", "null"],
-			["list", "[]"],
-			["shape", '{ "comments": { "a": 1 } }'],
-			["empty", ""],
-		] as const) {
-			const file = join(dir, `${name}.comments.json`);
-			await Bun.write(file, content);
-			const store = createCommentStore(file);
-			expect(await store.list()).toEqual({ comments: [] });
-			const written = await store.add(on("a.ts", "fresh"));
-			expect(await onDisk(file)).toEqual(written);
+	test("an unreadable file counts as empty and is kept aside: the next write does not destroy it", async () => {
+		const said = console.error;
+		const lines: string[] = [];
+		console.error = (line: string) => lines.push(line);
+		try {
+			for (const [name, content] of [
+				["broken", "{ not json"],
+				["null", "null"],
+				["list", "[]"],
+				["shape", '{ "comments": { "a": 1 } }'],
+				["empty", ""],
+			] as const) {
+				const own = join(dir, `unreadable-${name}`);
+				const file = join(own, "x.comments.json");
+				await Bun.write(file, content);
+				const store = createCommentStore(file);
+				expect(await store.list()).toEqual({ comments: [] });
+				const written = await store.add(on("a.ts", "fresh"));
+				expect(await onDisk(file)).toEqual(written);
+				// What was there is still there, under another name, and it was said once.
+				const aside = (await readdir(own)).filter((entry) => entry.includes(".unreadable-"));
+				expect(aside).toHaveLength(1);
+				expect(await Bun.file(join(own, aside[0] ?? "")).text()).toBe(content);
+			}
+			expect(lines).toHaveLength(5);
+		} finally {
+			console.error = said;
 		}
 	});
 
@@ -350,21 +365,37 @@ describe("createCommentStore", () => {
 	});
 
 	test("a write that fails changes nothing, and the writes after it go on", async () => {
-		// Its own directory: the write that fails leaves its temporary file behind.
 		const file = join(dir, "blocked", "x.comments.json");
 		const store = createCommentStore(file);
 		const first = await store.add(on("a.ts", "written"));
-		// A directory in the file's place: nothing can be renamed onto it.
-		await rm(file);
-		await mkdir(file);
+		// A directory where the store puts its temporary file: nothing can be written there.
+		const tmp = `${file}.${process.pid}.tmp`;
+		await mkdir(tmp);
 		await expect(store.add(on("a.ts", "lost"))).rejects.toThrow();
 		await expect(store.edit(first.comments[0]?.id ?? "", "lost too")).rejects.toThrow();
 		await expect(store.clear()).rejects.toThrow();
-		// What the store answers is what the last write that worked put on disk.
+		// The file is the list: it still holds what the last write that worked put there.
 		expect(await store.list()).toEqual(first);
-		await rm(file, { recursive: true });
+		expect(await onDisk(file)).toEqual(first);
+		await rm(tmp, { recursive: true });
 		const second = await store.add(on("a.ts", "written again"));
 		expect(second.comments.map((c) => c.text)).toEqual(["written", "written again"]);
 		expect(await onDisk(file)).toEqual(second);
+	});
+
+	test("two stores on one file (two servers of one review) do not write over each other", async () => {
+		const file = join(dir, "two", "x.comments.json");
+		const one = createCommentStore(file);
+		const two = createCommentStore(file);
+		// Both have looked at the (empty) file before either writes.
+		expect((await one.list()).comments).toEqual([]);
+		expect((await two.list()).comments).toEqual([]);
+		await one.add(on("a.ts", "from one"));
+		const after = await two.add(on("b.ts", "from two"));
+		expect(after.comments.map((c) => c.text)).toEqual(["from one", "from two"]);
+		expect((await one.list()).comments.map((c) => c.text)).toEqual(["from one", "from two"]);
+		const id = after.comments[0]?.id ?? "";
+		expect((await two.remove(id)).comments.map((c) => c.text)).toEqual(["from two"]);
+		expect((await one.list()).comments.map((c) => c.text)).toEqual(["from two"]);
 	});
 });

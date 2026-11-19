@@ -442,7 +442,8 @@ function Loaded({
 									<Button
 										variant="outline"
 										size="sm"
-										aria-keyshortcuts="c"
+										// The key is this button's only while no line is its target (see the hint).
+										aria-keyshortcuts={keyLine === undefined ? "c" : undefined}
 										data-comment-file=""
 										className={NARROW.comment.button}
 										onClick={() => openComposer(view.path)}
@@ -540,7 +541,8 @@ function Loaded({
 						</span>
 					) : null}
 					{view.lines.length > 0 ? (
-						<div className="ml-auto flex items-center gap-2">
+						// They wrap before they push the page sideways (a narrow window, the sidebar open).
+						<div className="ml-auto flex flex-wrap items-center justify-end gap-2">
 							{!plain ? (
 								<ToggleGroup
 									variant="outline"
@@ -680,9 +682,40 @@ function Loaded({
 	);
 }
 
+/**
+ * A comment that was being written on a file the range no longer has (it was removed or renamed
+ * by a new commit, and the save was refused): there is no page to show its composer on, so its
+ * text is shown here, to be taken along.
+ */
+function HeldDraft({ path, text }: { path: string; text: string }) {
+	return (
+		<div className="mt-4 flex flex-col gap-2 rounded-lg border bg-card p-3 text-left text-card-foreground">
+			<p className="text-xs font-medium text-muted-foreground">{S.heldDraft}</p>
+			<pre className="max-h-48 overflow-auto font-sans text-sm wrap-anywhere whitespace-pre-wrap">
+				{text}
+			</pre>
+			<div className="flex justify-end gap-2">
+				<Button variant="outline" size="sm" onClick={() => composers.close(path)}>
+					{S.heldDraftDiscard}
+				</Button>
+				<Button
+					size="sm"
+					onClick={async () => {
+						if (await copyText(text)) toast.success(S.copied);
+						else toast.error(S.copyFailed);
+					}}
+				>
+					{S.heldDraftCopy}
+				</Button>
+			</div>
+		</div>
+	);
+}
+
 export function FilePage({ route }: { route: Route }) {
 	const { rangeId, model, byPath, href, reloadModel } = useAtlas();
 	const { path, line } = readFileParams(route);
+	const held = useComposer(path);
 	const at = { base: model.range.base.sha, head: model.range.head.sha };
 	const key = path ? `${rangeId}|${at.base}|${at.head}|${path}` : null;
 	const resource = useResource(key, (signal) => getFile(path, rangeId, { signal, at }), recent);
@@ -709,6 +742,9 @@ export function FilePage({ route }: { route: Route }) {
 					}
 				>
 					{S.fileNotFoundHint(path, model.range.head.sha.slice(0, 10))}
+					{held && held.memory.text.trim() !== "" ? (
+						<HeldDraft path={path} text={held.memory.text} />
+					) : null}
 				</Notice>
 			);
 		return <ErrorView error={resource.error} retry={resource.retry} />;

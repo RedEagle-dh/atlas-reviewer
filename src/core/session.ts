@@ -33,11 +33,11 @@ import type {
 	ViewedUpdate,
 } from "./types";
 
-/** `<tool>/.review-atlas`: state files and the extraction cache. */
+/** `<tool>/.review-atlas`: the viewed marks, the comments and the extraction cache. */
 export const DEFAULT_DATA_DIR = resolve(import.meta.dir, "../../.review-atlas");
 
 export interface SessionOptions {
-	/** Where state and cache live; default `DEFAULT_DATA_DIR`. */
+	/** Where marks, comments and cache live; default `DEFAULT_DATA_DIR`. */
 	dataDir?: string;
 	highlighter?: Highlighter;
 	extractors?: readonly Extractor[];
@@ -169,20 +169,31 @@ export class ReviewSession {
 
 	/**
 	 * Records a comment in a range, at the range's head of this moment: the commit its line
-	 * numbers belong to. With `draft.head` (the head the writer's page shows) a range that has
-	 * moved on throws `RangeMovedError` and nothing is written: the line numbers were read off
-	 * another commit. `null` when the path is no file of the range (see `sourceOf`); a draft that
-	 * breaks a rule rejects with `InvalidCommentError`. The new comment is the last entry.
+	 * numbers belong to (for a file the range deletes: its base, recorded too). With `draft.head`
+	 * and `draft.base` (the commits the writer's page shows) a range that has moved on throws
+	 * `RangeMovedError` and nothing is written: the line numbers were read off another commit.
+	 * `null` when the path is no file of the range (see `sourceOf`); a draft that breaks a rule
+	 * rejects with `InvalidCommentError`. The new comment is the last entry.
 	 */
 	async addComment(draft: CommentDraft): Promise<CommentsState | null> {
 		const build = await this.build(draft.range);
-		const { range: _asked, head: shown, ...content } = draft;
-		const { headSha } = build.resolved;
+		const { range: _asked, head: shownHead, base: shownBase, ...content } = draft;
+		const { baseSha, headSha } = build.resolved;
 		// Before the path: in the new state the file may be gone, and "not found" would hide why.
-		if (shown !== undefined && shown !== headSha)
-			throw new RangeMovedError(build.resolved.range.id, shown, headSha);
+		if (
+			(shownHead !== undefined && shownHead !== headSha) ||
+			(shownBase !== undefined && shownBase !== baseSha)
+		)
+			throw new RangeMovedError(build.resolved.range.id, shownHead ?? null, headSha);
 		if (!sourceOf(build, draft.path)) return null;
-		return this.commentStore.add({ ...content, range: build.resolved.range.id, head: headSha });
+		// A deleted file is read from the base: the comment says so, with the commit.
+		const deleted = build.diff.get(draft.path)?.status === "deleted";
+		return this.commentStore.add({
+			...content,
+			range: build.resolved.range.id,
+			head: headSha,
+			...(deleted ? { base: baseSha } : {}),
+		});
 	}
 
 	/** `null` for an unknown id. */

@@ -75,12 +75,14 @@ export function readCommentDraft(value: unknown): CommentDraft {
 		if (typeof value.range !== "string") throw new InvalidCommentError("`range` must be a string");
 		draft.range = value.range;
 	}
-	if (value.head !== undefined) {
-		// Not empty: "no commit" is said by leaving the field out. An empty one would be answered
-		// as a range that has moved on, from nowhere.
-		if (typeof value.head !== "string" || value.head === "")
-			throw new InvalidCommentError("`head` must be a non-empty string");
-		draft.head = value.head;
+	// Not empty: "no commit" is said by leaving the field out. An empty one would be answered as
+	// a range that has moved on, from nowhere.
+	for (const field of ["head", "base"] as const) {
+		const commit = value[field];
+		if (commit === undefined) continue;
+		if (typeof commit !== "string" || commit === "")
+			throw new InvalidCommentError(`\`${field}\` must be a non-empty string`);
+		draft[field] = commit;
 	}
 	return draft;
 }
@@ -94,7 +96,7 @@ export function readCommentEdit(value: unknown): CommentEdit {
 /** A whole comment, as the store keeps it; throws `InvalidCommentError`. */
 function readComment(value: unknown): ReviewComment {
 	if (!isRecord(value)) throw new InvalidCommentError("a comment must be a JSON object");
-	const word = (field: "id" | "range" | "head" | "createdAt" | "updatedAt"): string => {
+	const word = (field: "id" | "range" | "head" | "base" | "createdAt" | "updatedAt"): string => {
 		const text = value[field];
 		if (typeof text !== "string" || text === "")
 			throw new InvalidCommentError(`\`${field}\` must be a non-empty string`);
@@ -113,23 +115,33 @@ function readComment(value: unknown): ReviewComment {
 		text: readText(value.text),
 		range: word("range"),
 		head: word("head"),
+		...(value.base === undefined ? {} : { base: word("base") }),
 		createdAt: time("createdAt"),
 		updatedAt: time("updatedAt"),
 	};
 }
 
-/** The comments of a file on disk; none when it is missing or no JSON, without the entries that break a rule. */
+/**
+ * The comments of a file on disk; none when there is no file, and without the entries that break
+ * a rule. A file that is there but holds no list of comments (a hand-edit gone wrong) is moved
+ * aside first: the next write would put a new list in its place, and what it held would be gone.
+ */
 async function readComments(file: string): Promise<ReviewComment[]> {
 	const comments: ReviewComment[] = [];
 	const ids = new Set<string>();
+	if (!(await Bun.file(file).exists())) return comments;
 	let data: unknown;
 	try {
 		data = JSON.parse(await Bun.file(file).text());
 	} catch {
-		// No comments yet (or unreadable): none.
+		// Not JSON: handled with every other shape that is no list, below.
+	}
+	if (!isRecord(data) || !Array.isArray(data.comments)) {
+		const aside = `${file}.unreadable-${Date.now()}`;
+		await rename(file, aside);
+		console.error(`[review-atlas] ${file} holds no list of comments; it is kept as ${aside}`);
 		return comments;
 	}
-	if (!isRecord(data) || !Array.isArray(data.comments)) return comments;
 	for (const entry of data.comments) {
 		try {
 			const comment = readComment(entry);
@@ -164,14 +176,18 @@ export interface CommentStore {
  * `InvalidCommentError`.
  */
 export function createCommentStore(file: string): CommentStore {
-	// Read once, and only once: a second read that finished after a write would bring the old list back.
-	let loaded: Promise<{ comments: readonly ReviewComment[] }> | undefined;
-	const load = () => {
-		loaded ??= readComments(file).then((comments) => ({ comments }));
-		return loaded;
-	};
-	// Writes run one after the other, so two quick requests cannot lose each other's comment.
+	/**
+	 * The file is the list: nothing of it is kept in memory. Every request reads it first, so a
+	 * second server of the same review (started on another port while the first still runs) sees
+	 * what this one wrote, instead of writing its own older list over it. Requests run one after
+	 * the other: two quick ones cannot lose each other's comment.
+	 */
 	let queue: Promise<unknown> = Promise.resolve();
+	const inTurn = <T>(task: () => Promise<T>): Promise<T> => {
+		const run = queue.then(task);
+		queue = run.catch(() => undefined);
+		return run;
+	};
 
 	const snapshot = (comments: readonly ReviewComment[]): CommentsState => ({
 		comments: comments.map((comment) => ({ ...comment })),
@@ -179,30 +195,26 @@ export function createCommentStore(file: string): CommentStore {
 
 	/**
 	 * `next` makes the new list from the current one; the current list itself means "nothing to
-	 * write". The list in memory changes only after the file is written: the two never differ.
+	 * write".
 	 */
 	const change = (
 		next: (current: readonly ReviewComment[]) => readonly ReviewComment[],
-	): Promise<CommentsState> => {
-		const run = queue.then(async () => {
-			const state = await load();
-			const comments = next(state.comments);
-			if (comments !== state.comments) {
+	): Promise<CommentsState> =>
+		inTurn(async () => {
+			const current: readonly ReviewComment[] = await readComments(file);
+			const comments = next(current);
+			if (comments !== current) {
 				await mkdir(dirname(file), { recursive: true });
 				const tmp = `${file}.${process.pid}.tmp`;
 				await Bun.write(tmp, `${JSON.stringify({ comments }, null, "\t")}\n`);
 				await rename(tmp, file);
-				state.comments = comments;
 			}
 			return snapshot(comments);
 		});
-		queue = run.catch(() => undefined);
-		return run;
-	};
 
 	return {
-		async list() {
-			return snapshot((await load()).comments);
+		list() {
+			return inTurn(async () => snapshot(await readComments(file)));
 		},
 		add(comment) {
 			return change((current) => {

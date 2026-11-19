@@ -100,6 +100,8 @@ export const CommentCard = memo(function CommentCard({
 
 	const closeEditor = () => {
 		edits.delete(id);
+		// What said "a comment is still in work" (the panel, asked to close) is out of date now.
+		toast.dismiss("comment-unsaved");
 		// The card takes the focus, before the field goes (see `onDelete`): as after a new comment,
 		// a screen reader reads the comment as it now is, and Tab goes on to its actions. Not the
 		// button that opened the editor: for a keyboard its tooltip would open, and in the panel the

@@ -149,6 +149,12 @@ describe("session", () => {
 			["src/new.ts", 12, "r", firstHead],
 			["src/same.ts", 1, "r", firstHead],
 		]);
+		// Only the comment on the deleted file says where its lines are from: the range's base.
+		const base = (await session.model("r")).range.base.sha;
+		expect(state?.comments.map((c) => c.base)).toEqual([undefined, base, undefined, undefined]);
+		// What a client says of it is not taken: the server knows which files the range deletes.
+		const claimed = await session.addComment({ path: "src/a.ts", text: "x", base });
+		expect(claimed?.comments.at(-1)?.base).toBeUndefined();
 	});
 
 	test("a path that is no file of the range: null, and nothing is written", async () => {
@@ -252,6 +258,12 @@ describe("session", () => {
 		// Nothing was written, not even the file.
 		expect(await session.comments()).toEqual({ comments: [] });
 		expect(await Bun.file(fileOf("moved-head")).exists()).toBe(false);
+
+		// The base the page shows is held to the same rule (a deleted file is read from it).
+		await expect(
+			session.addComment({ ...stale, head: now, base: firstHead }),
+		).rejects.toBeInstanceOf(RangeMovedError);
+		expect(await session.comments()).toEqual({ comments: [] });
 
 		// The head the range is at now, and a range that did not move: both are recorded.
 		await session.addComment({ ...stale, head: now });

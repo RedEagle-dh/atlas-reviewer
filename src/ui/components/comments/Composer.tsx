@@ -5,6 +5,7 @@
  */
 import { useEffect } from "react";
 import { flushSync } from "react-dom";
+import { toast } from "sonner";
 import type { TokenLine } from "../../../core/types";
 import { snippetOf } from "../../lib/comments";
 import { useAtlas } from "../../state/atlas";
@@ -24,6 +25,16 @@ export function focusComposer(): void {
 }
 
 /**
+ * The composer on the file holds text, so no other one opens: the reader is shown the open one
+ * and told why (the page may have jumped a long way back to it).
+ */
+export function showHeldComposer(): void {
+	focusComposer();
+	// One toast however often it is tried: with an id a second one replaces the first.
+	toast(S.commentUnsaved, { id: "comment-unsaved" });
+}
+
+/**
  * Opens the composer of a file for the lines `from`..`to` (or the whole file) and puts the cursor
  * into it. When a composer on the file already holds text it stays where it is, and the cursor
  * goes there: what is typed is never dropped for a click elsewhere.
@@ -32,10 +43,12 @@ export function focusComposer(): void {
  * reader presses right after `c` is the first letter of the comment, not `j` for the next file.
  */
 export function openComposer(path: string, from?: number, to?: number): void {
+	let opened = false;
 	flushSync(() => {
-		composers.open(path, from, to);
+		opened = composers.open(path, from, to);
 	});
-	focusComposer();
+	if (opened) focusComposer();
+	else showHeldComposer();
 }
 
 /**
@@ -84,6 +97,12 @@ export function Composer({
 	}, [composer, memory, head]);
 	const elsewhere = line !== undefined && memory.head !== undefined && memory.head !== head;
 	const hint = composer.lost ? S.composerLinesGone : elsewhere ? S.composerElsewhere : null;
+	// Once: a draft that waits on a file the reader comes back to must not take the focus (and
+	// the scroll position) every time. The editor has read the wish by the time this runs.
+	const refocus = memory.refocus === true;
+	useEffect(() => {
+		memory.refocus = false;
+	}, [memory]);
 
 	const save = async (text: string): Promise<string | null> => {
 		const created = await add(
@@ -93,8 +112,10 @@ export function Composer({
 		);
 		if (!created) {
 			const why = failure();
-			// Kept with the text: when the range has moved, the page is about to be built anew.
+			// Kept with the text: when the range has moved, the page is about to be built anew, and
+			// the reader, who was typing here, is put back into the field on it.
 			memory.problem = why?.moved ? S.commentMoved : S.commentNotSaved(S.whyFailed(why));
+			memory.refocus = why?.moved === true;
 			return memory.problem;
 		}
 		composers.close(path);
@@ -125,9 +146,9 @@ export function Composer({
 				endLine={endLine}
 				initial={memory.text}
 				problem={memory.problem ?? hint}
-				// A composer that appears with a save that failed (the range moved, the page was built
+				// A composer that appears after its save was refused (the range moved, the page was built
 				// anew): the reader was in it, and is put back into it.
-				autoFocus={memory.problem !== null}
+				autoFocus={refocus}
 				onSubmit={save}
 				onCancel={cancel}
 				onText={(text) => {

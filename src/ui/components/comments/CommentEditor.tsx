@@ -10,9 +10,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { MAX_COMMENT_TEXT } from "../../lib/comments";
+import { isMac } from "../../lib/platform";
 import { fmt, S } from "../../strings";
-
-const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
 /** The field grows with its text by itself where the browser can do that (`field-sizing`). */
 const GROWS =
@@ -46,8 +45,9 @@ export function CommentEditor({
 	/** What to say next to the buttons from the start (a save that failed before the page was built anew). */
 	problem?: string | null;
 	/**
-	 * The cursor goes into the field when the editor appears, after the text. Not for a composer:
-	 * it can appear without having been asked for (the page built anew), and whoever opens one
+	 * The cursor goes into the field when the editor appears, after the text. A composer asks for
+	 * it only on the page that was built anew because its save was refused: otherwise it can appear
+	 * without having been asked for (the reader comes back to the file), and whoever opens one
 	 * focuses it.
 	 */
 	autoFocus?: boolean;

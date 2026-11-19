@@ -72,11 +72,25 @@ function Search({ onClose }: { onClose: () => void }) {
 	const { reading, meta, viewed, go } = useAtlas();
 	const [query, setQuery] = useState("");
 	const results = useMemo(() => fuzzyFilter(query, reading, (f) => f.path, 40), [query, reading]);
+	// The selected row is ours to say, not cmdk's to keep: left alone, it stays on the row that was
+	// selected before the key (now somewhere down the list), scrolls the list there, and then
+	// moves to the first row without scrolling back: the best matches were out of sight.
+	const [selected, setSelected] = useState("");
+	const search = (next: string) => {
+		setQuery(next);
+		setSelected(fuzzyFilter(next, reading, (f) => f.path, 1)[0]?.item.path ?? "");
+	};
 	const chapterTitle = useMemo(() => new Map(meta.chapters.map((c) => [c.id, c.title])), [meta]);
 	return (
 		// Our own ranking, not cmdk's; and no Ctrl-K for "one up", which closes the palette here.
-		<Command shouldFilter={false} vimBindings={false} label={S.searchLabel}>
-			<CommandInput placeholder={S.searchPlaceholder} value={query} onValueChange={setQuery} />
+		<Command
+			shouldFilter={false}
+			vimBindings={false}
+			label={S.searchLabel}
+			value={selected}
+			onValueChange={setSelected}
+		>
+			<CommandInput placeholder={S.searchPlaceholder} value={query} onValueChange={search} />
 			<CommandList className="max-h-[min(24rem,50svh)]">
 				<CommandEmpty>{S.searchEmpty}</CommandEmpty>
 				{results.length > 0 ? (

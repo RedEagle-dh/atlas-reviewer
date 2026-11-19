@@ -40,7 +40,12 @@ function AlertDialogContent({
 }) {
 	return (
 		<AlertDialogPortal>
-			<AlertDialogOverlay />
+			{/*
+			 * One change to the generated component: `forceRender`. Opened from inside a sheet, the
+			 * dialog would otherwise get no backdrop (Base UI draws one per stack of dialogs) and sit
+			 * on the sheet in the sheet's own colour.
+			 */}
+			<AlertDialogOverlay forceRender />
 			<AlertDialogPrimitive.Popup
 				data-slot="alert-dialog-content"
 				data-size={size}

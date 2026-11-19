@@ -9,7 +9,8 @@ import { copyText } from "./clipboard";
 function browser(options: {
 	clipboard?: "works" | "refuses";
 	execCommand: "works" | "refuses" | "throws";
-	inDialog?: boolean;
+	/** The role of a dialog around the button that has the focus. */
+	inDialog?: "dialog" | "alertdialog";
 }) {
 	const events: string[] = [];
 	let copied: string | null = null;
@@ -36,8 +37,8 @@ function browser(options: {
 		append(): void {
 			events.push(`append to ${this.name}`);
 		}
-		closest(): FakeElement | null {
-			return options.inDialog ? dialog : null;
+		closest(selector: string): FakeElement | null {
+			return options.inDialog && selector.includes(`[role="${options.inDialog}"]`) ? dialog : null;
 		}
 	}
 	const dialog = new FakeElement("dialog");
@@ -99,9 +100,11 @@ describe("copyText", () => {
 	});
 
 	test("inside an open dialog the field goes into the dialog, which holds the focus", async () => {
-		const page = browser({ execCommand: "works", inDialog: true });
-		expect(await copyText("x")).toBe(true);
-		expect(page.events[0]).toBe("append to dialog");
+		for (const inDialog of ["dialog", "alertdialog"] as const) {
+			const page = browser({ execCommand: "works", inDialog });
+			expect(await copyText("x")).toBe(true);
+			expect(page.events[0]).toBe("append to dialog");
+		}
 	});
 
 	test("neither way: false, and the field is gone again", async () => {

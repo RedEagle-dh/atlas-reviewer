@@ -42,12 +42,14 @@ export const S = {
 	rangeMoved: (from: string, to: string) =>
 		`Der Bereich hat neue Commits (${from} → ${to}): Karte, Liste und Code zeigen jetzt den neuen Stand. Was sich seitdem geändert hat, gilt als nicht gesehen.`,
 	dismiss: "Ausblenden",
+	/** The name of the place where toasts appear, for a screen reader. */
+	toasts: "Meldungen",
 
 	category: CATEGORY_WORDS,
 	/** The chapter of the files no chapter matches (when the review names it not). */
 	restChapter: "Übrige",
 
-	// Top bar
+	// Header bar and the sidebar's head
 	range: "Bereich",
 	rangeCurrent: (label: string) => `Bereich: ${label}`,
 	rangeShas: (base: string, head: string) => `${base} bis ${head}`,
@@ -58,6 +60,8 @@ export const S = {
 	search: "Suchen",
 	searchShortcut: (mac: boolean) => (mac ? "⌘K" : "Strg K"),
 	progress: (seen: number, total: number) => `${fmt(seen)} von ${fmt(total)} gesehen`,
+	/** In the header bar, while the sidebar (which says it in full) is closed. */
+	progressShort: (seen: number, total: number) => `${fmt(seen)}/${fmt(total)} gesehen`,
 	theme: { system: "Wie das System", light: "Hell", dark: "Dunkel" },
 	themeToggle: (current: string) => `Farbschema: ${current} (wechseln)`,
 	sidebarShow: "Seitenleiste zeigen",
@@ -238,6 +242,8 @@ export const S = {
 				? `Kommentar zu Zeile ${fmt(line)}`
 				: `Kommentar zu den Zeilen ${fmt(line)}–${fmt(endLine)}`,
 	commentLine: (line: number) => `Zeile ${fmt(line)} kommentieren`,
+	/** On the "+" of a line: what a press does, and what a drag does. */
+	commentLineHint: "Kommentieren (ziehen: mehrere Zeilen)",
 	commentFile: "Datei kommentieren",
 	/**
 	 * The tooltip of "Datei kommentieren", followed by the key `c`: the key comments the line a
@@ -246,7 +252,7 @@ export const S = {
 	commentFileHint: (line?: number) =>
 		line === undefined
 			? "Die ganze Datei kommentieren"
-			: `Die ganze Datei kommentieren. Zeile ${fmt(line)} kommentieren:`,
+			: `Die ganze Datei kommentieren. Zeile ${fmt(line)}:`,
 	fileComments: "Kommentare zur Datei",
 	commentPlaceholder:
 		"Auftrag oder Frage an den Coding-Agenten, z. B. „Fehlerfall behandeln“ oder „Warum wird hier zweimal geladen?“",
@@ -280,6 +286,10 @@ export const S = {
 	/** A comment begun on another state of the code than the page shows now. */
 	composerElsewhere:
 		"Begonnen auf einem anderen Stand des Codes: Die Zeilen können jetzt andere sein. Stelle prüfen, dann senden.",
+	/** On the page of a file the range no longer has: the comment that was being written on it. */
+	heldDraft: "Auf dieser Datei war ein Kommentar in Arbeit. Sein Text:",
+	heldDraftCopy: "Text kopieren",
+	heldDraftDiscard: "Verwerfen",
 	composerLinesGone:
 		"Die Zeilen, für die dieser Kommentar begonnen wurde, gibt es nicht mehr: Er gilt jetzt der ganzen Datei.",
 	/** Esc is pressed in a field that holds text: why nothing happened. */
@@ -306,7 +316,7 @@ export const S = {
 	clearHint: "Das lässt sich nicht rückgängig machen.",
 	noComments: "Noch keine Kommentare",
 	noCommentsHint:
-		"Im Code auf das + neben einer Zeilennummer klicken; für die ganze Datei „Datei kommentieren“ über dem Code wählen oder c drücken. Ein Kommentar ist ein Auftrag oder eine Frage an den Coding-Agenten.",
+		"Im Code auf das + neben einer Zeilennummer klicken, für mehrere Zeilen von dort aus ziehen; für die ganze Datei „Datei kommentieren“ über dem Code wählen oder c drücken. Ein Kommentar ist ein Auftrag oder eine Frage an den Coding-Agenten.",
 	commentsNotLoaded: "Die Kommentare wurden nicht geladen.",
 	commentUnsaved: "Ein Kommentar ist noch in Arbeit: erst speichern oder abbrechen.",
 	close: "Schließen",

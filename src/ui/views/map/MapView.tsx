@@ -46,7 +46,7 @@ import { baseName, countViewed, dirName, viewedMark } from "../../lib/files";
 import { writeStored } from "../../lib/storage";
 import { fileRoute, type Grouping, mapRoute, type Route, readMapParams } from "../../router";
 import { useAtlas } from "../../state/atlas";
-import { useChoice, useResolvedTheme } from "../../state/prefs";
+import { useChoice, useFlag, useResolvedTheme } from "../../state/prefs";
 import { rememberViewport, takeRestore } from "../../state/route";
 import { fmt, S } from "../../strings";
 import { buildGroupTree, type Group, groupStats, locateGroup, ROOT_UNIT, trail } from "./grouping";
@@ -74,7 +74,7 @@ const FRAME_ID = "\u0000frame";
 /** The first view keeps the drawing below the floating controls and off the edges. */
 const PAD = 24;
 const TOP = 60;
-/** React Flow's minimap: 200 × 150 px, 15 px from the corner (the margin is given to it below). */
+/** React Flow's minimap: 200 × 150 px, 15 px from the corner (the margin of React Flow's panels). */
 const MINIMAP = { width: 200, height: 150, margin: 15 };
 
 export function groupLabel(group: Group): string {
@@ -460,6 +460,7 @@ function MapCanvas({ route }: { route: Route }) {
 	const params = readMapParams(route);
 	const theme = useResolvedTheme();
 	const [direction, setDirection] = useChoice<Direction>("map-direction", ["ltr", "rtl"], "ltr");
+	const [legend, setLegend] = useFlag("map-legend", false);
 	const [hoverState, setHovered] = useState<Tip | null>(null);
 	const wrapper = useRef<HTMLDivElement>(null);
 	const size = useSize(wrapper);
@@ -563,7 +564,6 @@ function MapCanvas({ route }: { route: Route }) {
 					NODE_WRAPPER,
 					node.context && "is-context-node",
 					lit && (lit.nodes.has(node.id) ? "is-lit" : "is-dim"),
-					node.id === focusId && "is-focus",
 				),
 				draggable: false,
 			};
@@ -792,7 +792,17 @@ function MapCanvas({ route }: { route: Route }) {
 					{S.directionTitle}
 				</span>
 				<div className={ON_CANVAS}>
-					<Popover>
+					{/*
+					 * Open until its button or Esc closes it, and remembered: it is read next to the map
+					 * while the map is panned and its nodes are pressed, which would close a plain popover.
+					 */}
+					<Popover
+						open={legend}
+						onOpenChange={(next, details) => {
+							if (next || details.reason === "trigger-press" || details.reason === "escape-key")
+								setLegend(next);
+						}}
+					>
 						<PopoverTrigger render={<Button variant="outline" size="sm" />}>
 							<InfoIcon data-icon="inline-start" aria-hidden="true" />
 							{S.legend}

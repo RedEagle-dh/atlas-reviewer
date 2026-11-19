@@ -53,7 +53,11 @@ async function importsOf(file: string): Promise<Found[]> {
 	const code = await Bun.file(join(SRC, file)).text();
 	return typescriptExtractor.extract(file, code).map((i) => {
 		const common = { kind: i.kind, line: i.line, specifier: i.specifier };
-		if (i.specifier.startsWith(UI_ALIAS)) return { ...common, layer: "ui", package: null };
+		if (i.specifier.startsWith(UI_ALIAS)) {
+			// Where it leads, not what it is called: `@/../core/x` is core.
+			const target = relative(SRC, resolve(SRC, "ui", i.specifier.slice(UI_ALIAS.length)));
+			return { ...common, layer: target.split("/")[0] ?? "", package: null };
+		}
 		if (i.specifier.startsWith(".")) {
 			const target = relative(SRC, resolve(SRC, dirname(file), i.specifier));
 			return { ...common, layer: target.split("/")[0] ?? "", package: null };

@@ -40,6 +40,17 @@ describe("createStateStore", () => {
 		expect((await store.read()).viewed).toEqual({ "old.ts": "sha-old", "new.ts": "sha-new" });
 	});
 
+	test("two stores on one file (two servers of one review) do not write over each other", async () => {
+		const file = join(dir, "two.json");
+		const one = createStateStore(file);
+		const two = createStateStore(file);
+		expect((await one.read()).viewed).toEqual({});
+		expect((await two.read()).viewed).toEqual({});
+		await one.set("a.ts", "sha-a");
+		expect((await two.set("b.ts", "sha-b")).viewed).toEqual({ "a.ts": "sha-a", "b.ts": "sha-b" });
+		expect((await one.read()).viewed).toEqual({ "a.ts": "sha-a", "b.ts": "sha-b" });
+	});
+
 	test("a path named `__proto__` is an ordinary key", async () => {
 		const file = join(dir, "proto.json");
 		const store = createStateStore(file);

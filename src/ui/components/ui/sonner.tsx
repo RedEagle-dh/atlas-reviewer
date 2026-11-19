@@ -26,6 +26,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
 					"--normal-text": "var(--popover-foreground)",
 					"--normal-border": "var(--border)",
 					"--border-radius": "var(--radius)",
+					// Not the generated sheet's own font list: toasts are part of this page. (Inline:
+					// a utility would lose to sonner's sheet, which is in no layer.)
+					fontFamily: "inherit",
 				} as React.CSSProperties
 			}
 			toastOptions={{

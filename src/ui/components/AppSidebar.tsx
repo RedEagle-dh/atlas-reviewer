@@ -2,24 +2,9 @@
  * The sidebar: the review's title and the range switch, the visible files by chapter (in reading
  * order) or by folder, and the overall progress. One row per file.
  */
-import {
-	ChevronRightIcon,
-	ChevronsUpDownIcon,
-	GitCompareArrowsIcon,
-	MapIcon,
-	MessageSquareIcon,
-} from "lucide-react";
+import { ChevronRightIcon, MapIcon, MessageSquareIcon } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuGroup,
-	DropdownMenuLabel,
-	DropdownMenuRadioGroup,
-	DropdownMenuRadioItem,
-	DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -42,64 +27,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { ChangedFile } from "../../core/types";
-import { baseName, countViewed, dirName, ltr, shortSha, viewedMark } from "../lib/files";
+import { baseName, countViewed, dirName, ltr, viewedMark } from "../lib/files";
 import { buildDirTree, type DirNode } from "../lib/tree";
-import { fileRoute, mapRoute, withRange } from "../router";
+import { fileRoute, mapRoute } from "../router";
 import { useAtlas } from "../state/atlas";
 import { useComments } from "../state/comments";
 import { useChoice } from "../state/prefs";
-import { navigate, useRoute } from "../state/route";
+import { useRoute } from "../state/route";
 import { fmt, S } from "../strings";
 import { Progress, SizeBar, StatusMark, ViewedMark } from "./marks";
-
-function RangeSwitch() {
-	const { meta, model, rangeId } = useAtlas();
-	const route = useRoute();
-	const label = meta.ranges.find((r) => r.id === rangeId)?.label ?? rangeId;
-	const choose = (id: string) =>
-		// The first range is the default: keep the URL short.
-		navigate(withRange(route, id === meta.ranges[0]?.id ? undefined : id));
-	return (
-		<SidebarMenu>
-			<SidebarMenuItem>
-				<DropdownMenu>
-					<DropdownMenuTrigger
-						render={<SidebarMenuButton variant="outline" aria-label={S.rangeCurrent(label)} />}
-					>
-						<GitCompareArrowsIcon aria-hidden="true" />
-						<span className="truncate">{label}</span>
-						<ChevronsUpDownIcon className="ml-auto text-muted-foreground" aria-hidden="true" />
-					</DropdownMenuTrigger>
-					<DropdownMenuContent className="min-w-72">
-						<DropdownMenuGroup>
-							<DropdownMenuLabel>{S.range}</DropdownMenuLabel>
-							<DropdownMenuRadioGroup value={rangeId} onValueChange={choose}>
-								{meta.ranges.map((range) => (
-									<DropdownMenuRadioItem key={range.id} value={range.id} closeOnClick>
-										<span className="grid gap-0.5 py-0.5">
-											<span className="font-medium">{range.label}</span>
-											{range.note ? (
-												<span className="text-xs text-muted-foreground">{range.note}</span>
-											) : null}
-											{range.id === rangeId ? (
-												<span className="font-mono text-xs text-muted-foreground">
-													{S.rangeShas(
-														`${model.range.base.ref} (${shortSha(model.range.base.sha)})`,
-														`${model.range.head.ref} (${shortSha(model.range.head.sha)})`,
-													)}
-												</span>
-											) : null}
-										</span>
-									</DropdownMenuRadioItem>
-								))}
-							</DropdownMenuRadioGroup>
-						</DropdownMenuGroup>
-					</DropdownMenuContent>
-				</DropdownMenu>
-			</SidebarMenuItem>
-		</SidebarMenu>
-	);
-}
+import { RangeSwitch } from "./RangeSwitch";
 
 /**
  * How a "show on the map" link next to a row appears: always where there is no hover (touch),
@@ -274,7 +211,11 @@ function ChapterList({ current }: { current: string | null }) {
 			<Collapsible
 				key={chapter.id}
 				open={open}
-				onOpenChange={() => toggle(chapter.id)}
+				onOpenChange={() => {
+					// Shown open as long as it holds the open file: a press now is not kept
+					// for later, when it would close the chapter by itself.
+					if (!holdsCurrent) toggle(chapter.id);
+				}}
 				render={<SidebarGroup data-chapter={chapter.id} />}
 			>
 				<div className="group/chapter relative">
@@ -356,7 +297,10 @@ function DirBranch({
 					<Collapsible
 						key={dir.dir}
 						open={open}
-						onOpenChange={() => toggle(dir.dir)}
+						onOpenChange={() => {
+							// As for a chapter: not while it holds the open file.
+							if (!holdsCurrent) toggle(dir.dir);
+						}}
 						render={<SidebarMenuItem />}
 					>
 						<SidebarMenuButton
@@ -440,7 +384,7 @@ export function AppSidebar({ current }: { current: string | null }) {
 				>
 					{meta.title}
 				</h1>
-				<RangeSwitch />
+				<RangeSwitch place="sidebar" />
 			</SidebarHeader>
 			<Tabs
 				value={tab}

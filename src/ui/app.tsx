@@ -20,6 +20,7 @@ import { shortSha } from "./lib/files";
 import { mapRoute, type Route, readFileParams, withRange } from "./router";
 import { AtlasContext, useAtlasValue, useViewedState } from "./state/atlas";
 import { CommentsProvider } from "./state/comments";
+import { typingInto } from "./state/keys";
 import { ResolvedThemeProvider, type Theme, useCategories, useFlag, useTheme } from "./state/prefs";
 import { useResource } from "./state/resource";
 import { hrefOf, navigate, useRoute, useScrollMemory } from "./state/route";
@@ -31,17 +32,6 @@ const metas = new Map<string, ReviewMeta>();
 
 /** Wider than the component's own 16rem: file names need the room. */
 const SIDEBAR_WIDTH = { "--sidebar-width": "20rem" } as CSSProperties;
-
-/** A text field has the focus: `/` is a character there, not the shortcut for the search. */
-function typingInto(target: EventTarget | null): boolean {
-	return (
-		target instanceof HTMLElement &&
-		(target.isContentEditable ||
-			target instanceof HTMLInputElement ||
-			target instanceof HTMLTextAreaElement ||
-			target instanceof HTMLSelectElement)
-	);
-}
 
 function UnknownView({ route }: { route: Route }) {
 	return (
@@ -134,7 +124,6 @@ function Shell({
 	const [searching, setSearching] = useState(false);
 	const main = useRef<HTMLDivElement>(null);
 	useScrollMemory(main);
-	const inset = useRef<HTMLElement>(null);
 
 	useEffect(() => {
 		const onKey = (event: KeyboardEvent) => {
@@ -178,22 +167,25 @@ function Shell({
 						variant="outline"
 						size="sm"
 						className="sr-only focus-visible:not-sr-only focus-visible:fixed focus-visible:top-2 focus-visible:left-2 focus-visible:z-50 focus-visible:h-7 focus-visible:px-2.5"
-						onClick={() => inset.current?.focus()}
+						onClick={() => main.current?.focus()}
 					>
 						{S.skipFiles}
 					</Button>
 				) : null}
 				<AppSidebar current={current} />
-				<SidebarInset ref={inset} tabIndex={-1} className="min-w-0 overflow-hidden outline-none">
+				<SidebarInset className="min-w-0 overflow-hidden">
 					<SiteHeader onSearch={openSearch} theme={theme} onTheme={setTheme} />
 					{/*
 					 * The scroll container of every view; the views find it as `.main`. The map pans
-					 * instead of scrolling and takes the full height.
+					 * instead of scrolling and takes the full height. It can take the focus (the skip
+					 * button gives it, and so does a click on anything in it that is no control): the
+					 * keys that scroll go to the focused box, so that has to be the box that scrolls.
 					 */}
 					<div
 						ref={main}
+						tabIndex={-1}
 						className={cn(
-							"main min-h-0 flex-1",
+							"main min-h-0 flex-1 outline-none",
 							route.view === "map" ? "overflow-hidden" : "overflow-auto",
 						)}
 						data-view={route.view}
@@ -215,7 +207,7 @@ export function App() {
 		<ResolvedThemeProvider value={resolved}>
 			<TooltipProvider delay={300}>
 				<Content theme={theme} setTheme={setTheme} />
-				<Toaster theme={resolved} position="bottom-center" />
+				<Toaster theme={resolved} position="bottom-center" containerAriaLabel={S.toasts} />
 			</TooltipProvider>
 		</ResolvedThemeProvider>
 	);
@@ -265,9 +257,15 @@ function Content({ theme, setTheme }: { theme: Theme; setTheme: (theme: Theme) =
 			/>
 		);
 	// Above the model's states: the comments belong to the review and stay while a range loads.
-	// A new comment names the head this model shows; when the range has left it, the model loads again.
+	// A new comment names the commits this model shows; when the range has left them, the model
+	// loads again.
 	return (
-		<CommentsProvider rangeId={rangeId} head={head} onMoved={reloadModel}>
+		<CommentsProvider
+			rangeId={rangeId}
+			head={head}
+			base={model.status === "ready" ? model.value.range.base.sha : null}
+			onMoved={reloadModel}
+		>
 			{model.status === "loading" ? (
 				<Loading />
 			) : model.status === "error" ? (

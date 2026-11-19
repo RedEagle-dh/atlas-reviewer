@@ -27,8 +27,8 @@ import { CommentCard } from "../../components/comments/CommentCard";
 import {
 	Composer,
 	extendComposer,
-	focusComposer,
 	openComposer,
+	showHeldComposer,
 } from "../../components/comments/Composer";
 import { isOutdated } from "../../lib/comments";
 import { baseName } from "../../lib/files";
@@ -205,6 +205,7 @@ const CodeRow = memo(
 					className="ln-add"
 					tabIndex={-1}
 					aria-label={S.commentLine(row.line)}
+					title={S.commentLineHint}
 				/>
 			</div>
 		);
@@ -351,6 +352,9 @@ export function CodeView({
 		const el = document.querySelector<HTMLElement>(`.code-view [data-line="${target}"]`);
 		if (!el) return;
 		arrived.current = arrival;
+		// The page was built anew under a comment whose save was refused (the range moved): the
+		// reader is in that composer, which has just taken the focus, and stays there.
+		if (document.activeElement?.closest("[data-composer]")) return;
 		const header = document.querySelector(".file-head")?.getBoundingClientRect().bottom ?? 0;
 		const rect = el.getBoundingClientRect();
 		if (rect.top < header || rect.bottom > window.innerHeight - 20)
@@ -452,9 +456,9 @@ export function CodeView({
 		if (line === null) return;
 		// Shift: the open, still empty composer now reaches to this line.
 		if (event.shiftKey && extendComposer(path, line)) return;
-		// A composer that holds text stays where it is; the reader is shown it instead.
+		// A composer that holds text stays where it is; the reader is shown it instead, and told.
 		if (composers.holdsText(path)) {
-			focusComposer();
+			showHeldComposer();
 			return;
 		}
 		dragNow.current = { anchor: line, head: line };

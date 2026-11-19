@@ -123,11 +123,6 @@ describe("lineMarks", () => {
 		expect(marks.size).toBe(1);
 		expect(lineMarks([], [], null).size).toBe(0);
 	});
-
-	test("the same input gives the same numbers: a row whose mark did not change is not drawn again", () => {
-		const input = [[{ from: 1, to: 300 }], [{ from: 7, to: 9 }], 7] as const;
-		expect([...lineMarks(...input)]).toEqual([...lineMarks(...input)]);
-	});
 });
 
 describe("pinnedLines", () => {

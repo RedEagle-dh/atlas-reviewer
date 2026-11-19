@@ -44,6 +44,11 @@ export interface Composer extends ComposerPlace {
 		/** Why the last attempt to save failed, as the composer says it. */
 		problem: string | null;
 		/**
+		 * The save was refused because the range has moved on: the page is about to be built anew,
+		 * and the composer that appears on it takes the focus back, once.
+		 */
+		refocus?: boolean;
+		/**
 		 * The head commit the page showed when the reader chose these lines (the composer notes it
 		 * when it first appears). Under another head the same numbers can be other lines.
 		 */
@@ -90,7 +95,14 @@ export function createComposerStore() {
 			const current = open.get(path);
 			if (holdsText(current)) return false;
 			const place = from === undefined || to === undefined ? {} : placed(from, to);
-			if (current && current.line === place.line && current.endLine === place.endLine) return true;
+			if (current && current.line === place.line && current.endLine === place.endLine) {
+				// The same lines, chosen from the other end: a shift-click extends from the new start.
+				if (from !== undefined && current.anchor !== from) {
+					open.set(path, { ...current, anchor: from });
+					changed();
+				}
+				return true;
+			}
 			open.set(path, {
 				...place,
 				...(from === undefined ? {} : { anchor: from }),

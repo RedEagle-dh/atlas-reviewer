@@ -5,28 +5,17 @@
  * Its words are ENGLISH whatever the UI speaks (agents are prompted in English), and all of them
  * live in `P` below: one place to change them.
  */
-import type { FileStatus, ReviewComment } from "../../core/types";
+import type { ReviewComment } from "../../core/types";
 import { locationOf, sortComments } from "./comments";
 
 export interface PromptContext {
 	repoName: string;
 	/** `ReviewModel.range` fits. */
-	range: {
-		id: string;
-		label: string;
-		base: { ref: string; sha: string };
-		head: { ref: string; sha: string };
-	};
+	range: { label: string; base: { ref: string; sha: string }; head: { ref: string; sha: string } };
 	/** `ReviewModel.readingOrder`: the comments are listed in it (see `sortComments`). */
 	readingOrder: readonly string[];
 	/** The language id of a quote's code fence (`ChangedFile.language`); without one the fence is bare. */
 	languageOf?: (path: string) => string | null;
-	/**
-	 * The file's status in `range`; `"deleted"` is said at the comment's place. That its line
-	 * numbers are those of the old version is said only of a comment written in this range at
-	 * this head: of any other, what the file was when it was written is not known.
-	 */
-	statusOf?: (path: string) => FileStatus | "unchanged" | undefined;
 }
 
 type Commit = { ref: string; sha: string };
@@ -52,8 +41,9 @@ const P = {
 			? "When you are done, summarise what you changed or answered."
 			: "When you are done, summarise per comment what you changed or answered.",
 	wholeFile: "whole file",
-	deletedFile: "deleted file",
-	deletedLines: "deleted file — line numbers of the old version",
+	deletedFile: (base: string) => `deleted file — its last version is at commit ${sha7(base)}`,
+	deletedLines: (base: string) =>
+		`deleted file — line numbers of its last version, at commit ${sha7(base)}`,
 	atCommit: (head: string) => `at commit ${sha7(head)}`,
 	firstLines: (quoted: number, all: number) => `(first ${quoted} of ${all} lines)`,
 };
@@ -63,11 +53,11 @@ function heading(comment: ReviewComment, number: number | null, context: PromptC
 	const onLines = comment.line !== undefined;
 	const notes: string[] = [];
 	if (!onLines) notes.push(P.wholeFile);
-	const { range } = context;
-	const writtenHere = comment.range === range.id && comment.head === range.head.sha;
-	if (context.statusOf?.(comment.path) === "deleted")
-		notes.push(onLines && writtenHere ? P.deletedLines : P.deletedFile);
-	if (comment.head !== range.head.sha) notes.push(P.atCommit(comment.head));
+	// What the comment recorded when it was written, whatever range the page shows now: a file
+	// its range deleted is read from the base, and that is where the agent finds it.
+	if (comment.base !== undefined)
+		notes.push(onLines ? P.deletedLines(comment.base) : P.deletedFile(comment.base));
+	else if (comment.head !== context.range.head.sha) notes.push(P.atCommit(comment.head));
 	const place = `${locationOf(comment)}${notes.length > 0 ? ` (${notes.join("; ")})` : ""}`;
 	return number === null ? `## ${place}` : `## ${number}. ${place}`;
 }

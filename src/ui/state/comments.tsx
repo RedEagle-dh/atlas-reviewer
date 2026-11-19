@@ -56,7 +56,7 @@ export interface Comments {
 	 * the server recorded it; `null` when it failed. When the range has moved on since, nothing is
 	 * written and the app loads the new state.
 	 */
-	add: (draft: Omit<CommentDraft, "range" | "head">) => Promise<ReviewComment | null>;
+	add: (draft: Omit<CommentDraft, "range" | "head" | "base">) => Promise<ReviewComment | null>;
 	/** These three: `false` when the request failed (`error` says why). */
 	edit: (id: string, text: string) => Promise<boolean>;
 	remove: (id: string) => Promise<boolean>;
@@ -198,26 +198,29 @@ const ActionsContext = createContext<CommentActions | null>(null);
 
 /**
  * Comments belong to the review, not to a range, so the provider stays where it is when the
- * range changes. `rangeId` and `head` (the range shown and the head commit of its model, `null`
- * while that loads) say where a new comment is written and which commit its lines are read off;
+ * range changes. `rangeId`, `head` and `base` (the range shown and the commits of its model,
+ * `null` while that loads) say where a new comment is written and which commits its lines are
+ * read off;
  * `onMoved` loads the model again when the server says the range has left that commit.
  */
 export function CommentsProvider({
 	rangeId,
 	head,
+	base,
 	onMoved,
 	children,
 }: {
 	rangeId: string;
 	head: string | null;
+	base: string | null;
 	onMoved: () => void;
 	children: ReactNode;
 }) {
 	// The store lives as long as the provider, and so does `add`: both read what the latest render
 	// was given. An "undo" that is pressed after the range changed still writes for the range and
 	// the head the page shows by then.
-	const latest = useRef({ rangeId, head, onMoved });
-	latest.current = { rangeId, head, onMoved };
+	const latest = useRef({ rangeId, head, base, onMoved });
+	latest.current = { rangeId, head, base, onMoved };
 	const [store] = useState(() => createCommentsStore(SERVER, () => latest.current.onMoved()));
 	useEffect(() => {
 		store.load();
@@ -231,9 +234,14 @@ export function CommentsProvider({
 	const { comments, loaded, error } = useSyncExternalStore(store.subscribe, store.getSnapshot);
 	const byPath = useMemo(() => commentsByPath(comments), [comments]);
 	const add = useCallback(
-		(draft: Omit<CommentDraft, "range" | "head">) => {
-			const { rangeId: range, head: shown } = latest.current;
-			return store.add({ ...draft, range, ...(shown === null ? {} : { head: shown }) });
+		(draft: Omit<CommentDraft, "range" | "head" | "base">) => {
+			const { rangeId: range, head: shownHead, base: shownBase } = latest.current;
+			return store.add({
+				...draft,
+				range,
+				...(shownHead === null ? {} : { head: shownHead }),
+				...(shownBase === null ? {} : { base: shownBase }),
+			});
 		},
 		[store],
 	);

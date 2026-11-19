@@ -10,19 +10,27 @@ import { fmt, S } from "../strings";
 export type AnyStatus = FileStatus | "unchanged";
 
 /** The colour of a status as text, as a soft background and as a solid one (bars, stacks). */
-export const STATUS_TEXT: Readonly<Record<AnyStatus, string>> = {
+const STATUS_TEXT: Readonly<Record<AnyStatus, string>> = {
 	added: "text-added",
 	modified: "text-modified",
 	deleted: "text-deleted",
 	renamed: "text-renamed",
 	unchanged: "text-muted-foreground",
 };
-export const STATUS_SOFT: Readonly<Record<AnyStatus, string>> = {
+const STATUS_SOFT: Readonly<Record<AnyStatus, string>> = {
 	added: "bg-added/15",
 	modified: "bg-modified/15",
 	deleted: "bg-deleted/15",
 	renamed: "bg-renamed/15",
 	unchanged: "bg-muted",
+};
+/** A line in the status colour, for a status written out on the page's own ground. */
+const STATUS_LINE: Readonly<Record<AnyStatus, string>> = {
+	added: "border-added/50",
+	modified: "border-modified/50",
+	deleted: "border-deleted/50",
+	renamed: "border-renamed/50",
+	unchanged: "border-border",
 };
 export const STATUS_SOLID: Readonly<Record<AnyStatus, string>> = {
 	added: "bg-added",
@@ -53,7 +61,9 @@ export function StatusMark({ status, className }: { status: AnyStatus; className
 
 export function StatusBadge({ status, label }: { status: AnyStatus; label?: string }) {
 	return (
-		<Badge variant="secondary" className={cn(STATUS_TEXT[status], STATUS_SOFT[status])}>
+		// On the page's ground, not on a tint of its own colour: there the word is too faint to
+		// read in the light theme (4.1:1 for "geändert").
+		<Badge variant="outline" className={cn(STATUS_TEXT[status], STATUS_LINE[status])}>
 			{label ?? S.status[status]}
 		</Badge>
 	);

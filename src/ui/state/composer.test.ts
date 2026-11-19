@@ -39,13 +39,25 @@ describe("createComposerStore", () => {
 		composers.open("a.ts", 3, 5);
 		const first = composers.get("a.ts");
 		expect(composers.open("a.ts", 3, 5)).toBe(true);
-		expect(composers.open("a.ts", 5, 3)).toBe(true);
 		expect(composers.get("a.ts")).toBe(first);
 		composers.open("a.ts");
 		const whole = composers.get("a.ts");
 		expect(composers.open("a.ts")).toBe(true);
 		expect(composers.get("a.ts")).toBe(whole);
 		expect(told()).toBe(2);
+	});
+
+	test("the same lines chosen from the other end: the selection starts there now", () => {
+		const { composers, told } = store();
+		composers.open("a.ts", 3, 5);
+		const memory = composers.get("a.ts")?.memory;
+		expect(composers.open("a.ts", 5, 3)).toBe(true);
+		expect(place(composers.get("a.ts"))).toEqual({ line: 3, endLine: 5, anchor: 5 });
+		expect(composers.get("a.ts")?.memory).toBe(memory);
+		expect(told()).toBe(2);
+		// A shift-click now counts from line 5.
+		expect(composers.extend("a.ts", 8)).toBe(true);
+		expect(place(composers.get("a.ts"))).toEqual({ line: 5, endLine: 8, anchor: 5 });
 	});
 
 	test("an empty composer moves; one that holds text stays where it is", () => {

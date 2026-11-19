@@ -9,16 +9,13 @@ const EARLIER = "fedcba9876543210fedcba9876543210fedcba98";
 
 const context: PromptContext = {
 	repoName: "review-atlas",
-	range: {
-		id: "branch",
-		label: "Branch",
-		base: { ref: "main", sha: BASE },
-		head: { ref: "HEAD", sha: HEAD },
-	},
+	range: { label: "Branch", base: { ref: "main", sha: BASE }, head: { ref: "HEAD", sha: HEAD } },
 	readingOrder: ["src/core/session.ts", "src/server/api.ts", "src/old.ts", "docs/notes.txt"],
 	languageOf: (path) => (path.endsWith(".ts") ? "typescript" : null),
-	statusOf: (path) => (path === "src/old.ts" ? "deleted" : "modified"),
 };
+
+/** As the server records a comment on a file its range deletes: with the range's base. */
+const GONE = { base: BASE };
 
 let written = 0;
 const comment = (path: string, text: string, place: Partial<ReviewComment> = {}): ReviewComment => {
@@ -149,19 +146,30 @@ describe("buildPrompt", () => {
 		);
 	});
 
-	test("what is said at a place: a deleted file, another commit, both", () => {
+	test("what is said at a place: a deleted file, another commit", () => {
 		const comments = [
-			comment("src/old.ts", "Was this still used?", { line: 5, snippet: "export const old = 1;" }),
-			comment("src/old.ts", "Why delete it?"),
-			comment("src/old.ts", "And this?", { line: 9, endLine: 12, head: EARLIER }),
+			comment("src/old.ts", "Was this still used?", {
+				line: 5,
+				snippet: "export const old = 1;",
+				...GONE,
+			}),
+			comment("src/old.ts", "Why delete it?", GONE),
+			// Written in another range, at another head: what it recorded is said all the same.
+			comment("src/old.ts", "And this?", {
+				line: 9,
+				endLine: 12,
+				range: "last",
+				head: EARLIER,
+				base: EARLIER,
+			}),
 			comment("src/server/api.ts", "An earlier state.", { line: 3, head: EARLIER }),
 			comment("src/server/api.ts", "The file, earlier.", { head: EARLIER }),
-			comment("src/old.ts", "Gone, earlier.", { head: EARLIER }),
-			comment("src/old.ts", "From another range.", { line: 20, range: "last" }),
+			// The file was there when this was written (no base recorded): nothing is claimed.
+			comment("src/old.ts", "Before it was deleted.", { line: 20, head: EARLIER }),
 		];
 		expect(buildPrompt(comments, context)).toBe(
 			text(
-				...INTRO(7),
+				...INTRO(6),
 				"## 1. src/server/api.ts (whole file; at commit fedcba9)",
 				"",
 				"The file, earlier.",
@@ -170,15 +178,11 @@ describe("buildPrompt", () => {
 				"",
 				"An earlier state.",
 				"",
-				"## 3. src/old.ts (whole file; deleted file)",
+				"## 3. src/old.ts (whole file; deleted file — its last version is at commit 1234567)",
 				"",
 				"Why delete it?",
 				"",
-				"## 4. src/old.ts (whole file; deleted file; at commit fedcba9)",
-				"",
-				"Gone, earlier.",
-				"",
-				"## 5. src/old.ts:5 (deleted file — line numbers of the old version)",
+				"## 4. src/old.ts:5 (deleted file — line numbers of its last version, at commit 1234567)",
 				"",
 				"```typescript",
 				"export const old = 1;",
@@ -186,15 +190,13 @@ describe("buildPrompt", () => {
 				"",
 				"Was this still used?",
 				"",
-				// Written at another commit, or in another range: what the file was then is not known,
-				// so whose line numbers these are is not claimed.
-				"## 6. src/old.ts:9-12 (deleted file; at commit fedcba9)",
+				"## 5. src/old.ts:9-12 (deleted file — line numbers of its last version, at commit fedcba9)",
 				"",
 				"And this?",
 				"",
-				"## 7. src/old.ts:20 (deleted file)",
+				"## 6. src/old.ts:20 (at commit fedcba9)",
 				"",
-				"From another range.",
+				"Before it was deleted.",
 				"",
 			),
 		);
@@ -263,7 +265,7 @@ describe("buildPrompt", () => {
 			"",
 		]);
 		// No `languageOf` at all is the same as one that knows nothing.
-		const { languageOf: _none, statusOf: _unknown, ...bare } = context;
+		const { languageOf: _none, ...bare } = context;
 		expect(buildPrompt(comments, bare)).toBe(
 			buildPrompt(comments, { ...context, languageOf: () => null }),
 		);

@@ -60,17 +60,16 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { copyText } from "../../lib/clipboard";
 import { commentsByPath, sortComments } from "../../lib/comments";
 import { baseName, dirName } from "../../lib/files";
+import { isMac } from "../../lib/platform";
 import { buildPrompt } from "../../lib/prompt";
 import { fileRoute, type Route, withRange } from "../../router";
 import { useAtlas } from "../../state/atlas";
 import { useComments } from "../../state/comments";
 import { pageEdits, panelEdits } from "../../state/composer";
-import { hrefOf } from "../../state/route";
+import { hrefOf, useRoute } from "../../state/route";
 import { fmt, S } from "../../strings";
 import { StatusMark } from "../marks";
 import { CommentCard } from "./CommentCard";
-
-const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
 type Tab = "list" | "prompt";
 
@@ -135,6 +134,9 @@ export function CommentsPanel() {
 		};
 	}, [open, reload]);
 	const popup = useRef<HTMLDivElement>(null);
+	/** The comments as they are now, for `heldBack`, which stays the same function. */
+	const latest = useRef(comments);
+	latest.current = comments;
 	/**
 	 * The sheet's heading: where the focus is when the sheet opens, and where it goes when what
 	 * had it is gone (the last card, the footer). Not the first control: that is the close button,
@@ -167,7 +169,6 @@ export function CommentsPanel() {
 				range: model.range,
 				readingOrder: model.readingOrder,
 				languageOf: (path) => byPath.get(path)?.language ?? null,
-				statusOf: (path) => byPath.get(path)?.status,
 			}),
 		[comments, meta.repoName, model, byPath],
 	);
@@ -221,13 +222,35 @@ export function CommentsPanel() {
 	 * the editor answers itself.
 	 */
 	const heldBack = useCallback((quiet = false): boolean => {
-		const field = popup.current?.querySelector<HTMLTextAreaElement>("textarea[data-dirty]");
-		if (!field) return false;
-		field.focus();
-		// One toast however often it is tried: with an id a second one replaces the first.
-		if (!quiet) toast(S.commentUnsaved, { id: "comment-unsaved" });
+		// A sheet that is not open holds nothing back.
+		if (!popup.current) return false;
+		const field = popup.current.querySelector<HTMLTextAreaElement>("textarea[data-dirty]");
+		if (field) {
+			field.focus();
+			// One toast however often it is tried: with an id a second one replaces the first.
+			if (!quiet) toast(S.commentUnsaved, { id: "comment-unsaved" });
+			return true;
+		}
+		// On the "Prompt" tab no card is on the page, and so no editor: a text that was being
+		// changed waits in `panelEdits`. The list is shown again, where the reader finds it (and
+		// it is said, for Esc too: no editor is there to answer the key).
+		const waiting = latest.current.some((comment) => {
+			const text = panelEdits.get(comment.id);
+			return text !== undefined && text !== comment.text;
+		});
+		if (!waiting) return false;
+		setTab("list");
+		toast(S.commentUnsaved, { id: "comment-unsaved" });
 		return true;
 	}, []);
+
+	// Another page was chosen while the sheet is open (the search opens over it): the sheet gives
+	// way to the page, unless a text in it is unsaved.
+	const route = useRoute();
+	// biome-ignore lint/correctness/useExhaustiveDependencies: the route is the trigger, not an input.
+	useEffect(() => {
+		if (!heldBack()) setOpen(false);
+	}, [route]);
 
 	// The same function for as long as the sheet lives: it is a prop of every card in the list,
 	// and a new one would draw them all again whenever the sheet changes (a tab, "copied").
@@ -236,8 +259,21 @@ export function CommentsPanel() {
 			// A new tab or window: this page, and its sheet, stay as they are.
 			if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
 				return;
-			if (heldBack()) event.preventDefault();
-			else setOpen(false);
+			if (heldBack()) {
+				event.preventDefault();
+				return;
+			}
+			setOpen(false);
+			// The link leads to where the page already is (the comment's own file; the same line as
+			// the last time): no route changes, so nothing would move. The comment's card on the
+			// page is brought into view instead.
+			const link = event.currentTarget;
+			if (link.hash !== window.location.hash) return;
+			const id = link.closest<HTMLElement>("[data-comment]")?.dataset.comment;
+			if (id === undefined) return;
+			document
+				.querySelector(`.main [data-comment="${CSS.escape(id)}"]`)
+				?.scrollIntoView({ block: "center" });
 		},
 		[heldBack],
 	);
@@ -264,7 +300,9 @@ export function CommentsPanel() {
 		}
 	};
 
-	const label = S.commentsOpen(count);
+	// Comments that did not load are not "no comments": the button says so, wherever the reader is.
+	const failed = !loaded && error !== null;
+	const label = failed ? `${S.commentsOpen(0)}. ${S.commentsNotLoaded}` : S.commentsOpen(count);
 	return (
 		<Sheet
 			open={open}
@@ -297,7 +335,9 @@ export function CommentsPanel() {
 							<MessageSquareTextIcon aria-hidden="true" />
 							{/* In a narrow bar only the icon and the count are left. */}
 							<span className="sr-only @4xl/header:not-sr-only">{S.comments}</span>
-							{count > 0 ? (
+							{failed ? (
+								<CircleAlertIcon className="text-destructive" aria-hidden="true" />
+							) : count > 0 ? (
 								<Badge
 									variant="secondary"
 									className="h-4.5 min-w-4.5 px-1 tabular-nums group-hover/button:bg-background"
@@ -481,7 +521,6 @@ export function CommentsPanel() {
 							<Button
 								ref={clearButton}
 								variant="ghost"
-								size="sm"
 								className="text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20"
 								onClick={() => setClearing({ open: true, count })}
 							>
