@@ -34,6 +34,10 @@ export function startServer(review: Review, options: ServerOptions = {}): Runnin
 		hostname: options.host ?? DEFAULT_HOST,
 		port: options.port ?? DEFAULT_PORT,
 		development: options.development ?? false,
+		// One server per port. Outside development mode Bun would let a second process listen on a
+		// port that is taken, and the two would answer in turns, each with its own copy of the
+		// viewed marks and the comments: what one writes, the other overwrites.
+		reusePort: false,
 		// The bodies the API takes are small: a viewed mark, a comment.
 		maxRequestBodySize: MAX_BODY,
 		routes: {

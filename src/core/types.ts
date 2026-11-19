@@ -370,8 +370,10 @@ export interface CommentEdit {
 
 /**
  * Body of every non-2xx answer of `/api/*`. `range-moved` (409): the branch has new commits.
- * The one answer without it: a request body above the server's size limit (far above a comment
- * at its limits) is turned away by Bun itself, 413 with no body.
+ * `bad-request` (400) also for a request body that is not sent as `application/json`: only the
+ * review's own page can send that type, a page of another site cannot (see `jsonBody` in
+ * `src/server/api.ts`). The one answer without this body: a request body above the server's
+ * size limit (above a comment at its limits) is turned away by Bun itself, 413 with no body.
  */
 export interface ApiErrorBody {
 	error: "bad-request" | "unknown-range" | "not-found" | "range-moved" | "internal";

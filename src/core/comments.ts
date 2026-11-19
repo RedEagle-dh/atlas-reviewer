@@ -93,14 +93,21 @@ function readComment(value: unknown): ReviewComment {
 			throw new InvalidCommentError(`\`${field}\` must be a non-empty string`);
 		return text;
 	};
+	// A timestamp in its one stored form, as `toISOString` writes it: comments are ordered by
+	// comparing these texts, and a page that formats one must not meet a hand-written "yesterday".
+	const time = (field: "createdAt" | "updatedAt"): string => {
+		const at = Date.parse(word(field));
+		if (Number.isNaN(at)) throw new InvalidCommentError(`\`${field}\` must be a date`);
+		return new Date(at).toISOString();
+	};
 	return {
 		id: word("id"),
 		...readPlace(value),
 		text: readText(value.text),
 		range: word("range"),
 		head: word("head"),
-		createdAt: word("createdAt"),
-		updatedAt: word("updatedAt"),
+		createdAt: time("createdAt"),
+		updatedAt: time("updatedAt"),
 	};
 }
 

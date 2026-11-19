@@ -51,7 +51,10 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 	return body as T;
 }
 
-/** A request with a JSON body. */
+/**
+ * A request with a JSON body. The content type is not decoration: the server takes no body
+ * without it (see `jsonBody` in `src/server/api.ts`).
+ */
 function send<T>(
 	method: "POST" | "PUT",
 	url: string,

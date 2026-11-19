@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -286,19 +286,35 @@ describe("createCommentStore", () => {
 					{ ...good, id: 7 },
 					{ ...good, id: "no-head", head: undefined },
 					{ ...good, id: "no-date", createdAt: 5 },
+					{ ...good, id: "bad-date", createdAt: "yesterday" },
+					{ ...good, id: "bad-update", updatedAt: "2026-13-45T10:00:00.000Z" },
 					// The same id again: an id names one comment.
 					{ ...good, text: "a second one" },
 					// Brought into the stored form rather than refused.
 					{ ...good, id: "two", endLine: 3, text: "  tidy  ", extra: true },
+					// A date written another way: the same instant, as the store writes it.
+					{ ...good, id: "three", createdAt: "2026-01-01T12:30:00+02:00", updatedAt: "2026-01-02" },
 				],
 			}),
 		);
 		const store = createCommentStore(file);
-		expect(await store.list()).toEqual({ comments: [good, { ...good, id: "two", text: "tidy" }] });
+		expect(await store.list()).toEqual({
+			comments: [
+				good,
+				{ ...good, id: "two", text: "tidy" },
+				{
+					...good,
+					id: "three",
+					createdAt: "2026-01-01T10:30:00.000Z",
+					updatedAt: "2026-01-02T00:00:00.000Z",
+				},
+			],
+		});
 		// Still usable after such a file.
 		expect((await store.edit("two", "edited"))?.comments.map((c) => c.text)).toEqual([
 			"kept",
 			"edited",
+			"kept",
 		]);
 	});
 
@@ -326,5 +342,24 @@ describe("createCommentStore", () => {
 		);
 		expect(comments).toHaveLength(1);
 		expect(await onDisk(file)).toEqual({ comments });
+	});
+
+	test("a write that fails changes nothing, and the writes after it go on", async () => {
+		// Its own directory: the write that fails leaves its temporary file behind.
+		const file = join(dir, "blocked", "x.comments.json");
+		const store = createCommentStore(file);
+		const first = await store.add(on("a.ts", "written"));
+		// A directory in the file's place: nothing can be renamed onto it.
+		await rm(file);
+		await mkdir(file);
+		await expect(store.add(on("a.ts", "lost"))).rejects.toThrow();
+		await expect(store.edit(first.comments[0]?.id ?? "", "lost too")).rejects.toThrow();
+		await expect(store.clear()).rejects.toThrow();
+		// What the store answers is what the last write that worked put on disk.
+		expect(await store.list()).toEqual(first);
+		await rm(file, { recursive: true });
+		const second = await store.add(on("a.ts", "written again"));
+		expect(second.comments.map((c) => c.text)).toEqual(["written", "written again"]);
+		expect(await onDisk(file)).toEqual(second);
 	});
 });

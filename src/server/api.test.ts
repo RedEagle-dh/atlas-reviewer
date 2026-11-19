@@ -1,8 +1,9 @@
 /**
  * Review comments end to end on a real repository: a temporary git repository with a modified, a
  * deleted, a renamed and an unchanged file, asked through the session, through the handlers (with
- * plain `Request` objects) and through the running server (routes, methods, body size). Git runs
- * isolated from the user's configuration (no signing, no hooks).
+ * plain `Request` objects) and through the running server (routes, methods, body size, what a
+ * page of another site may send). Git runs isolated from the user's configuration (no signing,
+ * no hooks).
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
@@ -272,18 +273,25 @@ const errorOf = (answer: Answer): [number, unknown, unknown] => {
 
 describe("handlers", () => {
 	const ENDPOINT = "http://atlas.test/api/comments";
-	const post = (body: unknown): Request =>
+	const JSON_BODY = { "content-type": "application/json" };
+	const post = (body: unknown, headers: Record<string, string> = JSON_BODY): Request =>
 		new Request(ENDPOINT, {
 			method: "POST",
+			headers,
 			body: typeof body === "string" ? body : JSON.stringify(body),
 		});
-	const withId = (id: string, method: "PUT" | "DELETE", body?: unknown): CommentRequest =>
+	const withId = (
+		id: string,
+		method: "PUT" | "DELETE",
+		body?: unknown,
+		headers: Record<string, string> = JSON_BODY,
+	): CommentRequest =>
 		Object.assign(
 			new Request(`${ENDPOINT}/${encodeURIComponent(id)}`, {
 				method,
 				...(body === undefined
 					? {}
-					: { body: typeof body === "string" ? body : JSON.stringify(body) }),
+					: { headers, body: typeof body === "string" ? body : JSON.stringify(body) }),
 			}),
 			{ params: { id } },
 		);
@@ -443,6 +451,51 @@ describe("handlers", () => {
 		expect(await Bun.file(fileOf("handlers-400")).exists()).toBe(false);
 	});
 
+	test("a body that does not say it is JSON is refused, so no other site's page can write a comment", async () => {
+		const session = open("handlers-type");
+		const api = createApi(session);
+		const ok = { path: "src/a.ts", text: "x" };
+		const refusal: [number, string, string] = [
+			400,
+			"bad-request",
+			"the body must be sent as application/json",
+		];
+		// What a browser lets any page send without asking: a form, plain text, no type at all.
+		for (const type of [
+			"text/plain",
+			"text/plain;charset=UTF-8",
+			"application/x-www-form-urlencoded",
+			"multipart/form-data; boundary=x",
+			"application/jsonp",
+			"text/json",
+			"",
+		])
+			expect([
+				type,
+				...errorOf(await answerOf(api.addComment(post(ok, { "content-type": type })))),
+			]).toEqual([type, ...refusal]);
+		// A `Request` gives a text body the type `text/plain` when none is named.
+		expect(errorOf(await answerOf(api.addComment(post(ok, {}))))).toEqual(refusal);
+		expect(await session.comments()).toEqual({ comments: [] });
+		expect(await Bun.file(fileOf("handlers-type")).exists()).toBe(false);
+
+		for (const type of ["application/json", "application/json; charset=utf-8", "Application/JSON"])
+			commentsOf(await answerOf(api.addComment(post(ok, { "content-type": type }))));
+		const [one] = (await session.comments()).comments;
+		expect((await session.comments()).comments).toHaveLength(3);
+		// An edit is held to the same rule.
+		expect(
+			errorOf(
+				await answerOf(
+					api.editComment(
+						withId(one?.id ?? "", "PUT", { text: "y" }, { "content-type": "text/plain" }),
+					),
+				),
+			),
+		).toEqual(refusal);
+		expect((await session.comments()).comments[0]?.text).toBe("x");
+	});
+
 	test("an unknown path or id is a 404 `not-found`, an unknown range a 404 `unknown-range`", async () => {
 		const session = open("handlers-404");
 		const api = createApi(session);
@@ -503,6 +556,13 @@ describe("the running server", () => {
 	});
 	afterAll(() => running.stop());
 
+	test("a port has one server: a second one on it is refused, not let in beside the first", () => {
+		// Two servers on one port would answer in turns, each from its own copy of the comments.
+		expect(() =>
+			startServer(review, { session: open("second-server"), port: running.server.port ?? 0 }),
+		).toThrow(/in use/);
+	});
+
 	test("the routes reach their handlers, the id comes out of the path", async () => {
 		expect(commentsOf(await send("GET", "/api/comments"))).toEqual([]);
 		const [one] = commentsOf(
@@ -556,6 +616,49 @@ describe("the running server", () => {
 			expect(answer.type).toBe("application/json;charset=utf-8");
 		}
 		expect(commentsOf(await send("GET", "/api/comments"))).toEqual([]);
+	});
+
+	test("what a page of another site can send does not write; what could is asked for first and never allowed", async () => {
+		const draft = JSON.stringify({ path: "src/a.ts", text: "from another site" });
+		// A form or a `no-cors` fetch: sent without asking, with one of the three types a form has.
+		for (const type of ["text/plain", "application/x-www-form-urlencoded", "multipart/form-data"]) {
+			const answer = await answerOf(
+				fetch(at("/api/comments"), {
+					method: "POST",
+					headers: { "content-type": type, origin: "http://other.example" },
+					body: draft,
+				}),
+			);
+			expect(errorOf(answer)).toEqual([
+				400,
+				"bad-request",
+				"the body must be sent as application/json",
+			]);
+		}
+		// Any other request (a JSON body, PUT, DELETE) the browser asks about first. The answer is no:
+		// a 404 that allows no origin.
+		for (const [path, method] of [
+			["/api/comments", "POST"],
+			["/api/comments", "DELETE"],
+			["/api/comments/some-id", "PUT"],
+			["/api/comments/some-id", "DELETE"],
+		] as const) {
+			const preflight = await fetch(at(path), {
+				method: "OPTIONS",
+				headers: {
+					origin: "http://other.example",
+					"access-control-request-method": method,
+					"access-control-request-headers": "content-type",
+				},
+			});
+			expect([path, method, preflight.status]).toEqual([path, method, 404]);
+			expect(preflight.headers.get("access-control-allow-origin")).toBeNull();
+			await preflight.text();
+		}
+		// Nor may another site read: no answer names an origin that is allowed to.
+		const read = await fetch(at("/api/comments"), { headers: { origin: "http://other.example" } });
+		expect(read.headers.get("access-control-allow-origin")).toBeNull();
+		expect(commentsOf(await answerOf(read))).toEqual([]);
 	});
 
 	test("the errors arrive as the contract's error body", async () => {

@@ -67,11 +67,22 @@ const SHA = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
  */
 export const MAX_BODY = 6 * (MAX_COMMENT_TEXT + MAX_COMMENT_SNIPPET) + 16 * 1024;
 
+/** `application/json`, with or without parameters (`; charset=utf-8`). */
+const JSON_TYPE = /^application\/json\s*(?:;|$)/i;
+
 /**
- * The body as JSON. Bun turns a larger body away before a handler runs (413, without a body);
- * the check here holds for whoever calls a handler another way.
+ * The body as JSON, and it has to say so (`content-type: application/json`). A page of any other
+ * site can make the browser send a form or plain text to this server, but before a request of
+ * this type the browser asks first (a CORS preflight), and nothing here answers yes. Without the
+ * check any page the reader has open could write a comment, and comments end up in a prompt for
+ * a coding agent.
+ *
+ * Bun turns a larger body away before a handler runs (413, without a body); the size check here
+ * holds for whoever calls a handler another way.
  */
 async function jsonBody(req: Request): Promise<unknown> {
+	if (!JSON_TYPE.test(req.headers.get("content-type") ?? ""))
+		throw new BadRequestError("the body must be sent as application/json");
 	const text = await req.text();
 	if (text.length > MAX_BODY) throw new BadRequestError("body too large");
 	try {
