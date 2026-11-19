@@ -60,6 +60,7 @@ import {
 	type ImportFlowEdge,
 	type MapFlowNode,
 	NODE_TYPES,
+	NODE_WRAPPER,
 	STATUSES,
 } from "./nodes";
 
@@ -266,7 +267,7 @@ function Legend() {
 				/>
 				{S.legendContext}
 			</li>
-			<li className="flex flex-wrap gap-x-3 gap-y-1.5 border-t pt-2.5">
+			<li className="grid grid-cols-2 gap-x-3 gap-y-1.5 border-t pt-2.5">
 				{STATUSES.map((status) => (
 					<span key={status} className="inline-flex items-center gap-1.5">
 						<StatusMark status={status} />
@@ -337,7 +338,10 @@ function NodeTip({
 			}
 			role="tooltip"
 		>
-			<div className="text-sm font-medium wrap-anywhere">{nodeLabel(node)}</div>
+			{/* A path wraps after a slash where it can, so a file name stays in one piece. */}
+			<div className="text-sm font-medium wrap-anywhere">
+				{nodeLabel(node).replaceAll("/", "/\u200b")}
+			</div>
 			{imports.length === 0 && importedBy.length === 0 ? (
 				<div className="text-muted-foreground">{S.tooltipNone}</div>
 			) : null}
@@ -554,8 +558,9 @@ function MapCanvas({ route }: { route: Route }) {
 				width: box.width,
 				height: box.height,
 				style: { width: box.width, height: box.height },
-				// What map.css and the minimap go by.
+				// What the cards, map.css and the minimap go by.
 				className: cn(
+					NODE_WRAPPER,
 					node.context && "is-context-node",
 					lit && (lit.nodes.has(node.id) ? "is-lit" : "is-dim"),
 					node.id === focusId && "is-focus",
@@ -756,6 +761,48 @@ function MapCanvas({ route }: { route: Route }) {
 
 	return (
 		<div {...canvasProps}>
+			{/* Before the drawing in the document, as on the screen: Tab reaches them before the nodes. */}
+			<div className="absolute top-3 right-3 z-10 flex items-center gap-2">
+				<div className={ON_CANVAS}>
+					<Tooltip>
+						<TooltipTrigger render={<Button variant="outline" size="sm" onClick={fit} />}>
+							<MaximizeIcon data-icon="inline-start" aria-hidden="true" />
+							{S.fit}
+						</TooltipTrigger>
+						<TooltipContent side="bottom">{S.fitTitle}</TooltipContent>
+					</Tooltip>
+				</div>
+				<Tooltip>
+					<TooltipTrigger
+						render={
+							<Choice
+								value={direction}
+								options={DIRECTIONS}
+								onChange={setDirection}
+								className={ON_CANVAS}
+								aria-label={S.directionLabel}
+								aria-describedby={directionHint}
+							/>
+						}
+					/>
+					<TooltipContent side="bottom">{S.directionTitle}</TooltipContent>
+				</Tooltip>
+				{/* The tooltip is for the eye only; a screen reader gets the same as the group's description. */}
+				<span id={directionHint} className="sr-only">
+					{S.directionTitle}
+				</span>
+				<div className={ON_CANVAS}>
+					<Popover>
+						<PopoverTrigger render={<Button variant="outline" size="sm" />}>
+							<InfoIcon data-icon="inline-start" aria-hidden="true" />
+							{S.legend}
+						</PopoverTrigger>
+						<PopoverContent align="end" className="w-80 p-3" aria-label={S.legend}>
+							<Legend />
+						</PopoverContent>
+					</Popover>
+				</div>
+			</div>
 			<ReactFlow<MapFlowNode, ImportFlowEdge>
 				key={`${params.grouping}|${group.id}|${direction}|${visible.length}`}
 				nodes={nodes}
@@ -800,49 +847,9 @@ function MapCanvas({ route }: { route: Route }) {
 					/>
 				) : null}
 			</ReactFlow>
-			<div className="absolute top-3 right-3 z-10 flex items-center gap-2">
-				<div className={ON_CANVAS}>
-					<Tooltip>
-						<TooltipTrigger render={<Button variant="outline" size="sm" onClick={fit} />}>
-							<MaximizeIcon data-icon="inline-start" aria-hidden="true" />
-							{S.fit}
-						</TooltipTrigger>
-						<TooltipContent side="bottom">{S.fitTitle}</TooltipContent>
-					</Tooltip>
-				</div>
-				<Tooltip>
-					<TooltipTrigger
-						render={
-							<Choice
-								value={direction}
-								options={DIRECTIONS}
-								onChange={setDirection}
-								className={ON_CANVAS}
-								aria-label={S.directionLabel}
-								aria-describedby={directionHint}
-							/>
-						}
-					/>
-					<TooltipContent side="bottom">{S.directionTitle}</TooltipContent>
-				</Tooltip>
-				{/* The tooltip is for the eye only; a screen reader gets the same as the group's description. */}
-				<span id={directionHint} className="sr-only">
-					{S.directionTitle}
-				</span>
-				<div className={ON_CANVAS}>
-					<Popover>
-						<PopoverTrigger render={<Button variant="outline" size="sm" />}>
-							<InfoIcon data-icon="inline-start" aria-hidden="true" />
-							{S.legend}
-						</PopoverTrigger>
-						<PopoverContent align="end" className="w-80 p-3" aria-label={S.legend}>
-							<Legend />
-						</PopoverContent>
-					</Popover>
-				</div>
-			</div>
+			{/* On a veil of the page's colour: on a level that is cut, nodes lie under the note. */}
 			{level.hiddenContext > 0 || tooLarge ? (
-				<div className="pointer-events-none absolute bottom-3 left-3 z-10 grid gap-0.5 text-xs text-muted-foreground">
+				<div className="pointer-events-none absolute bottom-2 left-1 z-10 grid gap-0.5 rounded-md bg-background/90 px-2 py-1 text-xs text-muted-foreground">
 					{tooLarge ? <span>{S.mapCut}</span> : null}
 					{level.hiddenContext > 0 ? <span>{S.contextHidden(level.hiddenContext)}</span> : null}
 				</div>

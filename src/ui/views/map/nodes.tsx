@@ -64,11 +64,23 @@ export type MapFlowNode = GroupFlowNode | FileFlowNode | FrameFlowNode;
 export const STATUSES = ["added", "modified", "renamed", "deleted"] as const;
 
 /**
- * A node's card. `font-sans` is the family MapView measures the names in. The ring is the keyboard
- * focus: React Flow's wrapper around the card holds it (its own outline is off, see map.css).
+ * The class MapView gives React Flow's wrapper of a node: the wrapper holds the keyboard focus
+ * (its own outline is off, see map.css), and the card inside shows it.
+ */
+export const NODE_WRAPPER = "group/node";
+
+/**
+ * A node's card. `font-sans` is the family MapView measures the names in. The ring is the focus
+ * of the card's own wrapper and of nothing above it: a shell that moves the focus to its main
+ * area after a navigation by keyboard must not light every card.
  */
 const CARD =
-	"relative size-full cursor-pointer rounded-lg border bg-card font-sans text-card-foreground shadow-xs transition-colors hover:border-ring in-focus-visible:border-ring in-focus-visible:ring-3 in-focus-visible:ring-ring/50";
+	"relative size-full cursor-pointer rounded-lg border bg-card font-sans text-card-foreground shadow-xs transition-colors hover:border-ring group-focus-visible/node:border-ring group-focus-visible/node:ring-3 group-focus-visible/node:ring-ring/50";
+/**
+ * The file the URL points at: a ring that stands off the card, so it reads apart from the hover
+ * border and from the keyboard's ring.
+ */
+const POINTED_AT = "outline-2 outline-offset-2 outline-primary";
 /**
  * A neighbour outside the current group steps back: flat, a dashed outline, muted text. Opaque all
  * the same: the lines to a second column of neighbours run behind the first.
@@ -189,7 +201,11 @@ export const FileNode = memo(function FileNode({ data }: NodeProps<FileFlowNode>
 	const columns = "grid grid-cols-[16px_minmax(0,1fr)] content-center gap-x-[6px] px-[10px]";
 	if (context)
 		return (
-			<div className={cn(CARD, CONTEXT_CARD, columns)} title={file.path} data-slot="map-node">
+			<div
+				className={cn(CARD, CONTEXT_CARD, columns, focus && POINTED_AT)}
+				title={file.path}
+				data-slot="map-node"
+			>
 				<Anchors />
 				<StatusMark status={file.status} className={cn(MARK, "row-span-2 self-center")} />
 				<span className={CONTEXT_NAME} data-slot="map-node-name">
@@ -199,17 +215,7 @@ export const FileNode = memo(function FileNode({ data }: NodeProps<FileFlowNode>
 			</div>
 		);
 	return (
-		<div
-			className={cn(
-				CARD,
-				columns,
-				// Marked from outside ("Auf der Karte zeigen"): a ring that stands off the card, so it
-				// reads apart from the hover border and from the keyboard's ring.
-				focus && "outline-2 outline-offset-2 outline-primary",
-			)}
-			title={file.path}
-			data-slot="map-node"
-		>
+		<div className={cn(CARD, columns, focus && POINTED_AT)} title={file.path} data-slot="map-node">
 			<Anchors />
 			<StatusMark status={file.status} className={cn(MARK, "self-center")} />
 			<div className="flex min-w-0 items-center gap-[6px]">
@@ -233,7 +239,8 @@ export const FileNode = memo(function FileNode({ data }: NodeProps<FileFlowNode>
 			>
 				{ltr(hint)}
 			</span>
-			<div className="col-start-2 flex min-w-0 items-center gap-[6px]">
+			{/* A line high with or without its text: every card has its name at the same height. */}
+			<div className="col-start-2 flex h-[16px] min-w-0 items-center gap-[6px]">
 				<span
 					className={cn(SMALL, "min-w-0 flex-1 truncate text-muted-foreground tabular-nums")}
 					title={
