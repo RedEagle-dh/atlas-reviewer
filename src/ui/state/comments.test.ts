@@ -95,6 +95,8 @@ describe("createCommentsStore", () => {
 			error: null,
 			moved: false,
 			answered: true,
+			refreshing: false,
+			stale: false,
 		});
 		expect(store.failure()).toBeNull();
 		// The same object until something changes: React compares snapshots by identity.
@@ -102,13 +104,14 @@ describe("createCommentsStore", () => {
 		let told = 0;
 		const unsubscribe = store.subscribe(() => told++);
 		expect(await store.load()).toBe(true);
-		expect(told).toBe(1);
+		// Once when it is asked for, once with the answer.
+		expect(told).toBe(2);
 		expect(store.getSnapshot()).not.toBe(first);
-		expect(store.getSnapshot()).toMatchObject({ loaded: true, error: null });
+		expect(store.getSnapshot()).toMatchObject({ loaded: true, error: null, refreshing: false });
 		expect(texts(store)).toEqual(["already there"]);
 		unsubscribe();
 		await store.load();
-		expect(told).toBe(1);
+		expect(told).toBe(2);
 	});
 
 	test("add sends the draft and resolves to the comment the server recorded", async () => {
@@ -230,6 +233,8 @@ describe("createCommentsStore", () => {
 			error: "the server is gone",
 			moved: false,
 			answered: false,
+			refreshing: false,
+			stale: false,
 		});
 		expect(store.failure()).toEqual({
 			message: "the server is gone",
@@ -374,5 +379,123 @@ describe("createCommentsStore", () => {
 		expect(server.log).toEqual(["add lost", "get", "add kept"]);
 		expect(store.getSnapshot().error).toBeNull();
 		expect(texts(store)).toEqual(["kept"]);
+	});
+
+	test("`refreshing` from the call of load() until its answer is published", async () => {
+		const server = fakeServer();
+		await server.api.add({ path: "a.ts", text: "one" });
+		const store = createCommentsStore(server.api);
+		const seen: { refreshing: boolean; texts: string[] }[] = [];
+		store.subscribe(() =>
+			seen.push({ refreshing: store.getSnapshot().refreshing, texts: texts(store) }),
+		);
+		server.hold();
+		const loading = store.load();
+		// At once, before the request has even left.
+		expect(store.getSnapshot().refreshing).toBe(true);
+		await Bun.sleep(5);
+		expect(store.getSnapshot().refreshing).toBe(true);
+		server.release();
+		expect(await loading).toBe(true);
+		expect(store.getSnapshot().refreshing).toBe(false);
+		// The answer and the end of the wait come in one snapshot: never "done" with the old list.
+		expect(seen).toEqual([
+			{ refreshing: true, texts: [] },
+			{ refreshing: false, texts: ["one"] },
+		]);
+
+		// A load that fails ends the wait just the same.
+		server.failNext("before");
+		const failing = store.load();
+		expect(store.getSnapshot().refreshing).toBe(true);
+		expect(await failing).toBe(false);
+		expect(store.getSnapshot()).toMatchObject({ refreshing: false, error: "the server is gone" });
+	});
+
+	test("two loads: `refreshing` until the last of them has its answer", async () => {
+		const server = fakeServer();
+		const store = createCommentsStore(server.api);
+		const seen: boolean[] = [];
+		store.subscribe(() => seen.push(store.getSnapshot().refreshing));
+		// One after the other: each has its own wait.
+		await store.load();
+		await store.load();
+		expect(seen).toEqual([true, false, true, false]);
+
+		// Overlapping, with a change between them: the first answer does not end the second wait.
+		seen.length = 0;
+		server.hold();
+		const first = store.load();
+		const added = store.add({ path: "a.ts", text: "one" });
+		const second = store.load();
+		server.release();
+		expect([await first, (await added)?.text, await second]).toEqual([true, "one", true]);
+		expect(seen).toEqual([true, true, true, false]);
+		expect(server.log.slice(-3)).toEqual(["get", "add one", "get"]);
+		expect(store.getSnapshot()).toMatchObject({ refreshing: false, stale: false });
+	});
+
+	test("`stale` when asking again fails on a loaded list, gone with the next answer", async () => {
+		const server = fakeServer();
+		const store = createCommentsStore(server.api);
+		await store.add({ path: "a.ts", text: "one" });
+		await server.api.add({ path: "a.ts", text: "from another tab" });
+		server.failNext("before");
+		expect(await store.load()).toBe(false);
+		// What this tab knew stays, and it is marked as possibly behind.
+		expect(store.getSnapshot()).toMatchObject({
+			loaded: true,
+			stale: true,
+			refreshing: false,
+			error: "the server is gone",
+		});
+		expect(texts(store)).toEqual(["one"]);
+		expect(await store.load()).toBe(true);
+		expect(store.getSnapshot()).toMatchObject({ stale: false, error: null });
+		expect(texts(store)).toEqual(["one", "from another tab"]);
+
+		// A change that fails, and the list cannot be asked for after it either.
+		server.failNext("before");
+		server.failNext("before");
+		expect(await store.remove("c1")).toBe(false);
+		expect(store.getSnapshot()).toMatchObject({ stale: true });
+		// A change that the server answers brings the whole list: no longer stale.
+		expect(await store.add({ path: "a.ts", text: "two" })).not.toBeNull();
+		expect(store.getSnapshot()).toMatchObject({ stale: false });
+
+		// A change that fails, but the list asked for after it arrives: the list is current.
+		server.failNext("before", new ApiError(404, { error: "not-found", message: "no such file" }));
+		expect(await store.add({ path: "gone.ts", text: "x" })).toBeNull();
+		expect(store.getSnapshot()).toMatchObject({ stale: false, error: "no such file" });
+	});
+
+	test("a refusal because the range moved on leaves `stale` as it was", async () => {
+		const server = fakeServer();
+		const store = createCommentsStore(server.api);
+		await store.load();
+		const moved = () =>
+			new ApiError(409, { error: "range-moved", message: 'range "r" has moved on' });
+		server.failNext("before", moved());
+		await store.add({ path: "a.ts", text: "x", head: OLD_HEAD });
+		expect(store.getSnapshot()).toMatchObject({ moved: true, stale: false });
+		server.failNext("before");
+		await store.load();
+		server.failNext("before", moved());
+		await store.add({ path: "a.ts", text: "x", head: OLD_HEAD });
+		expect(store.getSnapshot()).toMatchObject({ moved: true, stale: true });
+	});
+
+	test("a failed FIRST load is not stale: nothing is shown that could be behind", async () => {
+		const server = fakeServer();
+		const store = createCommentsStore(server.api);
+		server.failNext("before");
+		expect(await store.load()).toBe(false);
+		expect(store.getSnapshot()).toMatchObject({ loaded: false, stale: false, refreshing: false });
+		// Nor is a change that fails before any list was had, with the asking after it failing too.
+		server.failNext("before");
+		server.failNext("before");
+		expect(await store.add({ path: "a.ts", text: "x" })).toBeNull();
+		expect(store.getSnapshot()).toMatchObject({ loaded: false, stale: false });
+		expect(store.getSnapshot().error).not.toBeNull();
 	});
 });

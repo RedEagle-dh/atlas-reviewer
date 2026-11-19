@@ -10,6 +10,7 @@ import {
 	ClipboardXIcon,
 	MessageSquareDashedIcon,
 	MessageSquareTextIcon,
+	RefreshCwOffIcon,
 	Trash2Icon,
 	XIcon,
 } from "lucide-react";
@@ -73,6 +74,13 @@ import { CommentCard } from "./CommentCard";
 
 type Tab = "list" | "prompt";
 
+/**
+ * For a button that waits for the list (with `focusableWhenDisabled`): it looks disabled and
+ * keeps the focus, which a disabled button drops to the page, as "Als Prompt kopieren" would
+ * when the reader comes back to the tab after copying.
+ */
+const WAITING = "aria-disabled:pointer-events-none aria-disabled:opacity-50";
+
 /** The path of a group: a link to the file, the folders quiet, cut from the left like every path. */
 function FileLink({
 	path,
@@ -105,7 +113,7 @@ function FileLink({
 }
 
 export function CommentsPanel() {
-	const { comments, loaded, error, clear, reload, failure } = useComments();
+	const { comments, loaded, error, refreshing, stale, clear, reload, failure } = useComments();
 	const { meta, model, byPath, href } = useAtlas();
 	const [open, setOpen] = useState(false);
 	const [tab, setTab] = useState<Tab>("list");
@@ -113,25 +121,19 @@ export function CommentsPanel() {
 	/** The browser gave no clipboard: the prompt is shown selected, to be copied by hand. */
 	const [byHand, setByHand] = useState(false);
 	/**
-	 * The "delete all?" dialog, and how many comments it asks about: the number it was opened
-	 * with, so its title does not count down to nothing while it closes.
+	 * The "delete all?" dialog, and how many comments it was last asked about: its title says the
+	 * comments there are, and this number once they are gone, so it does not count down to
+	 * nothing while it closes.
 	 */
 	const [clearing, setClearing] = useState({ open: false, count: 0 });
 	const [working, setWorking] = useState(false);
-	// Another tab of the review may have written comments since this one asked: the list is asked
-	// for again when the sheet opens, and the prompt is not copied before the answer is there
-	// (whatever it is: with the server gone, the comments this tab knows are still worth copying).
-	const [asking, setAsking] = useState(false);
+	// Another tab of the review may have written or deleted comments since this one asked: the
+	// list is asked for again when the sheet opens (and when the tab comes back). Until the answer
+	// is there (`refreshing`), the prompt is not copied and "Alle löschen" waits; whatever the
+	// answer is: with the server gone, the comments this tab knows are still worth copying, and
+	// the sheet says that they may be behind (`stale`).
 	useEffect(() => {
-		if (!open) return;
-		let current = true;
-		setAsking(true);
-		reload().then(() => {
-			if (current) setAsking(false);
-		});
-		return () => {
-			current = false;
-		};
+		if (open) reload();
 	}, [open, reload]);
 	const popup = useRef<HTMLDivElement>(null);
 	/** The comments as they are now, for `heldBack`, which stays the same function. */
@@ -279,6 +281,8 @@ export function CommentsPanel() {
 	);
 
 	const clearAll = async () => {
+		// The number the title keeps when the comments are gone: the one that was confirmed.
+		setClearing({ open: true, count });
 		setWorking(true);
 		const done = await clear();
 		setWorking(false);
@@ -399,6 +403,26 @@ export function CommentsPanel() {
 					</div>
 					<SheetDescription>{S.commentsHint}</SheetDescription>
 				</SheetHeader>
+
+				{stale ? (
+					// Heard once, and the focus stays where it is.
+					<div className="px-4 pt-3">
+						<Alert role="status">
+							<RefreshCwOffIcon aria-hidden="true" />
+							<AlertTitle>{S.commentsStale}</AlertTitle>
+							<AlertDescription>{S.commentsStaleHint}</AlertDescription>
+							<Button
+								variant="outline"
+								size="sm"
+								className="col-start-2 mt-2 justify-self-start"
+								onClick={() => reload()}
+							>
+								{refreshing ? <Spinner data-icon="inline-start" aria-hidden="true" /> : null}
+								{S.retry}
+							</Button>
+						</Alert>
+					</div>
+				) : null}
 
 				{!loaded ? (
 					error === null ? (
@@ -521,13 +545,21 @@ export function CommentsPanel() {
 							<Button
 								ref={clearButton}
 								variant="ghost"
-								className="text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20"
+								className={`text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20 ${WAITING}`}
+								disabled={refreshing}
+								focusableWhenDisabled
 								onClick={() => setClearing({ open: true, count })}
 							>
 								<Trash2Icon data-icon="inline-start" />
 								{S.clearComments}
 							</Button>
-							<Button onClick={copy} disabled={asking} data-testid="copy-prompt">
+							<Button
+								onClick={copy}
+								disabled={refreshing}
+								focusableWhenDisabled
+								className={WAITING}
+								data-testid="copy-prompt"
+							>
 								{copied ? (
 									<CheckIcon data-icon="inline-start" />
 								) : (
@@ -553,12 +585,21 @@ export function CommentsPanel() {
 						finalFocus={() => clearButton.current ?? heading.current}
 					>
 						<AlertDialogHeader>
-							<AlertDialogTitle>{S.clearTitle(clearing.count)}</AlertDialogTitle>
+							{/* The server deletes what it has: the title counts what the last answer brought. */}
+							<AlertDialogTitle>
+								{S.clearTitle(count > 0 ? count : clearing.count)}
+							</AlertDialogTitle>
 							<AlertDialogDescription>{S.clearHint}</AlertDialogDescription>
 						</AlertDialogHeader>
 						<AlertDialogFooter>
 							<AlertDialogCancel disabled={working}>{S.cancel}</AlertDialogCancel>
-							<AlertDialogAction variant="destructive" disabled={working} onClick={clearAll}>
+							<AlertDialogAction
+								variant="destructive"
+								disabled={working || refreshing}
+								focusableWhenDisabled
+								className={WAITING}
+								onClick={clearAll}
+							>
 								{working ? <Spinner data-icon="inline-start" aria-hidden="true" /> : null}
 								{S.clearComments}
 							</AlertDialogAction>

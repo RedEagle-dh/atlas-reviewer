@@ -318,6 +318,9 @@ export const S = {
 	noCommentsHint:
 		"Im Code auf das + neben einer Zeilennummer klicken, für mehrere Zeilen von dort aus ziehen; für die ganze Datei „Datei kommentieren“ über dem Code wählen oder c drücken. Ein Kommentar ist ein Auftrag oder eine Frage an den Coding-Agenten.",
 	commentsNotLoaded: "Die Kommentare wurden nicht geladen.",
+	/** In the sheet when asking for the list again failed: what it shows is what this tab knew. */
+	commentsStale: "Die Kommentare konnten nicht neu geladen werden.",
+	commentsStaleHint: "Liste und Prompt zeigen den Stand, den dieser Tab zuletzt kannte.",
 	commentUnsaved: "Ein Kommentar ist noch in Arbeit: erst speichern oder abbrechen.",
 	close: "Schließen",
 } as const;

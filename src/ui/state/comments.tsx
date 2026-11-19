@@ -52,6 +52,16 @@ export interface Comments {
 	/** The message of the last request that failed; gone when the next one succeeds. */
 	error: string | null;
 	/**
+	 * The list is being asked for again (`reload`, the tab coming back): its answer is not there
+	 * yet.
+	 */
+	refreshing: boolean;
+	/**
+	 * Asking for the list again failed after it had been loaded: what is shown is what this tab
+	 * knew before, and another tab may have changed it since. Gone with the next answer.
+	 */
+	stale: boolean;
+	/**
 	 * Writes a comment in the current range, for the head commit the page shows. The comment as
 	 * the server recorded it; `null` when it failed. When the range has moved on since, nothing is
 	 * written and the app loads the new state.
@@ -95,6 +105,10 @@ export interface CommentsSnapshot {
 	moved: boolean;
 	/** False when `error` stands for no answer at all (see `CommentFailure.answered`). */
 	answered: boolean;
+	/** From the moment `load()` is called until its answer (or its failure) is published. */
+	refreshing: boolean;
+	/** The last attempt to get the list failed while a list was loaded (see `Comments.stale`). */
+	stale: boolean;
 }
 
 /**
@@ -106,11 +120,13 @@ export interface CommentsSnapshot {
  */
 export function createCommentsStore(api: CommentsApi = SERVER, onMoved: () => void = () => {}) {
 	/** Nothing has failed. */
-	const fine = { error: null, moved: false, answered: true };
-	let snapshot: CommentsSnapshot = { comments: [], loaded: false, ...fine };
+	const fine = { error: null, moved: false, answered: true, stale: false };
+	/** The `load()`s that have been called and whose answer is not published yet. */
+	let asking = 0;
+	let snapshot: CommentsSnapshot = { comments: [], loaded: false, ...fine, refreshing: false };
 	const listeners = new Set<() => void>();
-	const publish = (next: CommentsSnapshot) => {
-		snapshot = next;
+	const publish = (next: Omit<CommentsSnapshot, "refreshing">) => {
+		snapshot = { ...next, refreshing: asking > 0 };
 		for (const listener of listeners) listener();
 	};
 	/**
@@ -150,6 +166,9 @@ export function createCommentsStore(api: CommentsApi = SERVER, onMoved: () => vo
 					error: error instanceof Error ? error.message : String(error),
 					moved,
 					answered: error instanceof ApiError,
+					// The list could not be had, and the one shown may be behind the server's. A refusal
+					// because the range moved on wrote nothing: the list is as current as it was.
+					stale: now !== null ? false : moved ? snapshot.stale : snapshot.loaded,
 				});
 				if (moved) onMoved();
 				return null;
@@ -167,7 +186,20 @@ export function createCommentsStore(api: CommentsApi = SERVER, onMoved: () => vo
 			};
 		},
 		getSnapshot: (): CommentsSnapshot => snapshot,
-		load: (): Promise<boolean> => run(() => api.get(), false).then((state) => state !== null),
+		load: (): Promise<boolean> => {
+			asking++;
+			if (!snapshot.refreshing) publish(snapshot);
+			// Counted off just before its answer is published: the answer and the end of the wait come
+			// in one snapshot.
+			const get = async () => {
+				try {
+					return await api.get();
+				} finally {
+					asking--;
+				}
+			};
+			return run(get, false).then((state) => state !== null);
+		},
 		/** The server appends: the new comment is the last one of its answer. */
 		add: (draft: CommentDraft): Promise<ReviewComment | null> =>
 			run(() => api.add(draft), true).then((state) => state?.comments.at(-1) ?? null),
@@ -231,7 +263,10 @@ export function CommentsProvider({
 		document.addEventListener("visibilitychange", onVisible);
 		return () => document.removeEventListener("visibilitychange", onVisible);
 	}, [store]);
-	const { comments, loaded, error } = useSyncExternalStore(store.subscribe, store.getSnapshot);
+	const { comments, loaded, error, refreshing, stale } = useSyncExternalStore(
+		store.subscribe,
+		store.getSnapshot,
+	);
 	const byPath = useMemo(() => commentsByPath(comments), [comments]);
 	const add = useCallback(
 		(draft: Omit<CommentDraft, "range" | "head" | "base">) => {
@@ -257,8 +292,8 @@ export function CommentsProvider({
 		[add, store],
 	);
 	const value = useMemo<Comments>(
-		() => ({ comments, byPath, loaded, error, ...actions }),
-		[comments, byPath, loaded, error, actions],
+		() => ({ comments, byPath, loaded, error, refreshing, stale, ...actions }),
+		[comments, byPath, loaded, error, refreshing, stale, actions],
 	);
 	return (
 		<ActionsContext.Provider value={actions}>
