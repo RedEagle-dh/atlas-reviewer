@@ -88,15 +88,25 @@ export function Composer({
 	const { add, failure } = useCommentActions();
 	const { line, endLine, memory } = composer;
 	// A draft outlives the page it was begun on (the range gets commits, the reader switches the
-	// range). Its line numbers were chosen on that page: under another head they can be other
-	// lines, and the composer says so instead of quietly quoting them.
-	const head = useAtlas().model.range.head.sha;
+	// range). Its line numbers were chosen on that page: read off another commit they can be other
+	// lines, and the composer says so instead of quietly quoting them. A file the range deletes is
+	// shown as the range's base has it, every other file as its head has it: two ranges with one
+	// head show other lines only of a file they delete.
+	const { model, byPath } = useAtlas();
+	const at = byPath.get(path)?.status === "deleted" ? model.range.base.sha : model.range.head.sha;
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `composer` is the trigger — lines chosen anew (a shift-click) start a new note.
 	useEffect(() => {
-		memory.head ??= head;
-	}, [composer, memory, head]);
-	const elsewhere = line !== undefined && memory.head !== undefined && memory.head !== head;
+		memory.at ??= at;
+	}, [composer, memory, at]);
+	const elsewhere = line !== undefined && memory.at !== undefined && memory.at !== at;
 	const hint = composer.lost ? S.composerLinesGone : elsewhere ? S.composerElsewhere : null;
+	// Why the last save failed comes first. Lines that are gone are said even then: the page built
+	// anew after a refused save may be the one without them, and what the reader sends next is a
+	// comment on the whole file.
+	const problem =
+		memory.problem !== null && composer.lost
+			? `${memory.problem} ${S.composerLinesGone}`
+			: (memory.problem ?? hint);
 	// Once: a draft that waits on a file the reader comes back to must not take the focus (and
 	// the scroll position) every time. The editor has read the wish by the time this runs.
 	const refocus = memory.refocus === true;
@@ -145,7 +155,7 @@ export function Composer({
 				line={line}
 				endLine={endLine}
 				initial={memory.text}
-				problem={memory.problem ?? hint}
+				problem={problem}
 				// A composer that appears after its save was refused (the range moved, the page was built
 				// anew): the reader was in it, and is put back into it.
 				autoFocus={refocus}

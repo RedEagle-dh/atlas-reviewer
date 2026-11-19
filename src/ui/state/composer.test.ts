@@ -128,14 +128,14 @@ describe("createComposerStore", () => {
 		expect(told()).toBe(4);
 	});
 
-	test("extend forgets the head the lines were first chosen at: they are chosen anew", () => {
+	test("extend forgets the commit the lines were first read off: they are chosen anew", () => {
 		const { composers } = store();
 		composers.open("a.ts", 10);
 		const memory = composers.get("a.ts")?.memory;
 		if (!memory) throw new Error("no composer");
-		memory.head = "an earlier head";
+		memory.at = "an earlier commit";
 		expect(composers.extend("a.ts", 12)).toBe(true);
-		expect(composers.get("a.ts")?.memory.head).toBeUndefined();
+		expect(composers.get("a.ts")?.memory.at).toBeUndefined();
 	});
 
 	test("extend leaves a composer with text and one for the whole file alone", () => {
@@ -159,10 +159,17 @@ describe("createComposerStore", () => {
 		if (!before) throw new Error("no composer");
 		before.memory.text = "typed before the file got shorter";
 		before.memory.problem = "Nicht gespeichert";
+		before.memory.at = "the commit the lines were read off";
 		composers.toFile("a.ts");
 		const after = composers.get("a.ts");
 		expect(place(after)).toEqual({ line: undefined, endLine: undefined, anchor: undefined });
 		expect(after?.memory).toBe(before.memory);
+		// Why the save failed is still there to be said, before what happened to the lines.
+		expect(after?.memory).toEqual({
+			text: "typed before the file got shorter",
+			problem: "Nicht gespeichert",
+			at: "the commit the lines were read off",
+		});
 		// It says what happened to it.
 		expect(after?.lost).toBe(true);
 		// Already for the whole file: nothing to do.

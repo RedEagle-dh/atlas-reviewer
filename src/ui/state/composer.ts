@@ -49,10 +49,11 @@ export interface Composer extends ComposerPlace {
 		 */
 		refocus?: boolean;
 		/**
-		 * The head commit the page showed when the reader chose these lines (the composer notes it
-		 * when it first appears). Under another head the same numbers can be other lines.
+		 * The commit the page read these lines off when the reader chose them (the composer notes it
+		 * when it first appears): the range's head, or its base for a file the range deletes. Read
+		 * off another commit, the same numbers can be other lines.
 		 */
-		head?: string;
+		at?: string;
 	};
 }
 
@@ -119,8 +120,8 @@ export function createComposerStore() {
 			const current = open.get(path);
 			if (!current || current.line === undefined || holdsText(current)) return false;
 			const anchor = current.anchor ?? current.line;
-			// Lines chosen anew, on the page as it is now: the note of the head starts over.
-			delete current.memory.head;
+			// Lines chosen anew, on the page as it is now: the note of their commit starts over.
+			delete current.memory.at;
 			open.set(path, { ...placed(anchor, line), anchor, memory: current.memory });
 			changed();
 			return true;
