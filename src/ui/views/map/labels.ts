@@ -18,10 +18,19 @@ export const MAX_CONTEXT_WIDTH = 340;
 const MAX_GROUP_WIDTH = 260;
 const MIN_CONTEXT_WIDTH = 120;
 
-/** Horizontal room around the name: padding, borders and, for a file node, its viewed mark. */
-const FILE_CHROME = 8 + 11 + 4 + 6 + 14 + 6;
-const CONTEXT_CHROME = 20 + 2 + 8 + 6;
-const GROUP_CHROME = 20 + 2 + 4;
+/**
+ * Horizontal room around the name, as nodes.tsx draws it: padding and borders, a status or viewed
+ * mark of 16 px with its gap of 6 px, a little spare for the rounding of text widths.
+ */
+const BOX = 20 + 2;
+const MARK = 16 + 6;
+/** A file: its status before the name, its viewed mark after it. */
+const FILE_CHROME = BOX + 2 * MARK + 2;
+/** A context group: the gap to its count (the count itself is measured). */
+const CONTEXT_GROUP_CHROME = BOX + 8 + 6;
+/** A context file: its status before the name. */
+const CONTEXT_FILE_CHROME = BOX + MARK + 2;
+const GROUP_CHROME = BOX + 4;
 /** Two lines hold less than twice one line: words wrap whole. */
 const TWO_LINES = 1.6;
 
@@ -71,11 +80,12 @@ export function labelNodes(
 				node.kind === "group"
 					? measure(count, "small")
 					: Math.max(0, measure(hint, "small") - measure(name, "context"));
-			const room = MAX_CONTEXT_WIDTH - CONTEXT_CHROME - (node.kind === "group" ? extra : 0);
+			const chrome = node.kind === "group" ? CONTEXT_GROUP_CHROME : CONTEXT_FILE_CHROME;
+			const room = MAX_CONTEXT_WIDTH - chrome - (node.kind === "group" ? extra : 0);
 			const text = fitText(name, room, (t) => measure(t, "context"));
 			const width = Math.min(
 				MAX_CONTEXT_WIDTH,
-				Math.max(MIN_CONTEXT_WIDTH, Math.ceil(measure(text, "context") + extra + CONTEXT_CHROME)),
+				Math.max(MIN_CONTEXT_WIDTH, Math.ceil(measure(text, "context") + extra + chrome)),
 			);
 			out.set(node.id, { ...NODE_SIZE.context, width, text });
 		} else if (node.kind === "file") {
@@ -86,7 +96,7 @@ export function labelNodes(
 			);
 			out.set(node.id, { ...NODE_SIZE.file, width, text });
 		} else {
-			// Wide enough for the title in two lines (map.css clamps it there; the node's tooltip
+			// Wide enough for the title in two lines (nodes.tsx clamps it there; the node's tooltip
 			// has it whole when even the widest node is not enough).
 			const indexWidth = index ? measure(index, "group") + 6 : 0;
 			const needed = measure(name, "group") / TWO_LINES + indexWidth + GROUP_CHROME;

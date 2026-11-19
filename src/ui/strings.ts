@@ -144,6 +144,8 @@ export const S = {
 	beforeChange: "vor der Änderung (eine Seite ist gelöscht)",
 	emptyLevel: "Hier ist keine Datei der gewählten Kategorien.",
 	mapEmpty: "Keine Datei in den gewählten Kategorien.",
+	minimap: "Minikarte",
+	nodeKeys: "Enter oder Leertaste: öffnen",
 
 	// File page
 	fileNotFound: "Diese Datei gibt es in diesem Stand nicht.",
