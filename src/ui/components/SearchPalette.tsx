@@ -1,11 +1,25 @@
 /** Ctrl/Cmd-K: fuzzy search over the visible files; Enter opens the chosen one. */
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowDownIcon, ArrowUpIcon, CornerDownLeftIcon } from "lucide-react";
+import { type ReactNode, useMemo, useState } from "react";
+import {
+	Command,
+	CommandDialog,
+	CommandEmpty,
+	CommandGroup,
+	CommandInput,
+	CommandItem,
+	CommandList,
+} from "@/components/ui/command";
+import { Kbd } from "@/components/ui/kbd";
 import { viewedMark } from "../lib/files";
 import { fuzzyFilter } from "../lib/fuzzy";
 import { fileRoute } from "../router";
 import { useAtlas } from "../state/atlas";
 import { S } from "../strings";
 import { StatusMark, ViewedMark } from "./marks";
+
+/** Keeps a path left-to-right inside a box that cuts from the left (`direction: rtl`). */
+const LRM = "‎";
 
 /** The path with the matched characters marked; the file name in full weight. */
 function highlight(path: string, indices: readonly number[]): ReactNode[] {
@@ -17,10 +31,13 @@ function highlight(path: string, indices: readonly number[]): ReactNode[] {
 	let runInName = false;
 	const flush = (key: number) => {
 		if (run === "") return;
-		const cls = `${runMarked ? "hit" : ""}${runInName ? " name" : ""}`.trim();
 		parts.push(
-			cls ? (
-				<span key={key} className={cls}>
+			runMarked ? (
+				<mark key={key} className="bg-transparent font-semibold text-foreground">
+					{run}
+				</mark>
+			) : runInName ? (
+				<span key={key} className="text-foreground">
 					{run}
 				</span>
 			) : (
@@ -43,100 +60,92 @@ function highlight(path: string, indices: readonly number[]): ReactNode[] {
 	return parts;
 }
 
-export function SearchPalette({ onClose }: { onClose: () => void }) {
+/** The field, the results and the key hints. Lives only while the dialog is open: a new search starts empty. */
+function Search({ onClose }: { onClose: () => void }) {
 	const { reading, meta, viewed, go } = useAtlas();
 	const [query, setQuery] = useState("");
-	const [active, setActive] = useState(0);
-	const dialog = useRef<HTMLDialogElement>(null);
-	const input = useRef<HTMLInputElement>(null);
-	const list = useRef<HTMLDivElement>(null);
 	const results = useMemo(() => fuzzyFilter(query, reading, (f) => f.path, 40), [query, reading]);
 	const chapterTitle = useMemo(() => new Map(meta.chapters.map((c) => [c.id, c.title])), [meta]);
-
-	useEffect(() => {
-		// A modal <dialog>: focus stays inside, Escape closes it, the page behind is inert.
-		if (dialog.current && !dialog.current.open) dialog.current.showModal();
-		input.current?.focus();
-	}, []);
-	useEffect(() => {
-		list.current?.querySelector(`[data-index="${active}"]`)?.scrollIntoView({ block: "nearest" });
-	}, [active]);
-
-	const open = (index: number) => {
-		const hit = results[index];
-		if (!hit) return;
-		onClose();
-		go(fileRoute({ path: hit.item.path }));
-	};
-
 	return (
-		<dialog
-			ref={dialog}
-			className="palette"
-			aria-label={S.searchLabel}
-			data-modal-open
-			onClose={onClose}
-			onMouseDown={(e) => {
-				// A press on the backdrop lands on the <dialog> itself; its content fills it otherwise.
-				if (e.target === e.currentTarget) onClose();
-			}}
-		>
-			<div className="palette-body">
-				<input
-					ref={input}
-					className="palette-input"
-					type="search"
-					placeholder={S.searchPlaceholder}
-					aria-label={S.searchLabel}
-					aria-controls="palette-results"
-					aria-activedescendant={results[active] ? `palette-${active}` : undefined}
-					value={query}
-					onChange={(e) => {
-						setQuery(e.target.value);
-						setActive(0);
-					}}
-					onKeyDown={(e) => {
-						if (e.key === "ArrowDown") {
-							e.preventDefault();
-							setActive((a) => Math.min(a + 1, results.length - 1));
-						} else if (e.key === "ArrowUp") {
-							e.preventDefault();
-							setActive((a) => Math.max(a - 1, 0));
-						} else if (e.key === "Enter") {
-							e.preventDefault();
-							open(active);
-						} else if (e.key === "Escape") {
-							e.preventDefault();
-							onClose();
-						}
-					}}
-				/>
-				<div className="palette-results" id="palette-results" ref={list} role="listbox">
-					{results.length === 0 ? <div className="palette-empty">{S.searchEmpty}</div> : null}
-					{results.map(({ item, match }, i) => (
-						<div
-							key={item.path}
-							id={`palette-${i}`}
-							role="option"
-							tabIndex={-1}
-							aria-selected={i === active}
-							data-index={i}
-							className="palette-item"
-							onMouseMove={() => setActive(i)}
-							onClick={() => open(i)}
-							onKeyDown={() => {}}
-						>
-							<StatusMark status={item.status} />
-							<span className="palette-path">{highlight(item.path, match.indices)}</span>
-							<span className="palette-chapter">
-								{chapterTitle.get(item.chapter) ?? item.chapter}
-							</span>
-							<ViewedMark mark={viewedMark(item, viewed)} />
-						</div>
-					))}
-				</div>
-				<div className="palette-foot">{S.searchHint}</div>
+		// Our own ranking, not cmdk's; and no Ctrl-K for "one up", which closes the palette here.
+		<Command shouldFilter={false} vimBindings={false} label={S.searchLabel}>
+			<CommandInput placeholder={S.searchPlaceholder} value={query} onValueChange={setQuery} />
+			<CommandList className="max-h-[min(24rem,50svh)]">
+				<CommandEmpty>{S.searchEmpty}</CommandEmpty>
+				{results.length > 0 ? (
+					<CommandGroup>
+						{results.map(({ item, match }) => (
+							<CommandItem
+								key={item.path}
+								value={item.path}
+								// The item's own trailing check mark has no meaning here.
+								className="[&>svg:last-child]:hidden"
+								onSelect={() => {
+									onClose();
+									go(fileRoute({ path: item.path }));
+								}}
+							>
+								<StatusMark status={item.status} />
+								{/* Cut from the left, so a long path keeps its file name. */}
+								<span className="min-w-0 flex-1 truncate text-left text-muted-foreground [direction:rtl]">
+									{LRM}
+									{highlight(item.path, match.indices)}
+									{LRM}
+								</span>
+								<span className="max-w-56 shrink-0 truncate text-xs text-muted-foreground">
+									{chapterTitle.get(item.chapter) ?? item.chapter}
+								</span>
+								<ViewedMark mark={viewedMark(item, viewed)} />
+							</CommandItem>
+						))}
+					</CommandGroup>
+				) : null}
+			</CommandList>
+			{/* For the eye; a screen reader gets the same as the dialog's description. */}
+			<div
+				className="-mx-1 mt-1 -mb-1 flex items-center gap-4 border-t px-3 py-2 text-xs text-muted-foreground"
+				aria-hidden="true"
+			>
+				<span className="flex items-center gap-1.5">
+					<Kbd>
+						<CornerDownLeftIcon />
+					</Kbd>
+					{S.searchKeys.open}
+				</span>
+				<span className="flex items-center gap-1.5">
+					<Kbd>
+						<ArrowUpIcon />
+					</Kbd>
+					<Kbd>
+						<ArrowDownIcon />
+					</Kbd>
+					{S.searchKeys.move}
+				</span>
+				<span className="flex items-center gap-1.5">
+					<Kbd>{S.keyEsc}</Kbd>
+					{S.searchKeys.close}
+				</span>
 			</div>
-		</dialog>
+		</Command>
+	);
+}
+
+/**
+ * Rendered only while the search is open: the dialog's title and description (for screen
+ * readers) are part of the page as long as the dialog component is.
+ */
+export function SearchPalette({ onClose }: { onClose: () => void }) {
+	return (
+		<CommandDialog
+			open
+			onOpenChange={(open) => {
+				if (!open) onClose();
+			}}
+			title={S.searchLabel}
+			description={S.searchHint}
+			className="top-1/6 sm:max-w-2xl"
+		>
+			<Search onClose={onClose} />
+		</CommandDialog>
 	);
 }

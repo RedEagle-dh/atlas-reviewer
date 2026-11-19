@@ -15,7 +15,6 @@
  */
 @import "./tokens.css" layer(base);
 @import "./base.css" layer(base);
-@import "./shell.css" layer(base);
 
 /*
  * What utilities do not fit: React Flow's own sheet (base layer, so the map's rules and every

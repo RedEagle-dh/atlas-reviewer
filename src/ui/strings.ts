@@ -35,6 +35,7 @@ export const S = {
 	errorHintServer: "Die Meldung des Servers:",
 	unknownRange: (id: string) => `Den Bereich „${id}“ kennt dieses Review nicht.`,
 	toFirstRange: "Zum ersten Bereich",
+	unknownView: "Diese Seite gibt es nicht.",
 	rangeMoved: (from: string, to: string) =>
 		`Der Bereich hat neue Commits (${from} → ${to}): Karte, Liste und Code zeigen jetzt den neuen Stand. Was sich seitdem geändert hat, gilt als nicht gesehen.`,
 	dismiss: "Ausblenden",
@@ -45,10 +46,12 @@ export const S = {
 
 	// Top bar
 	range: "Bereich",
+	rangeCurrent: (label: string) => `Bereich: ${label}`,
 	rangeShas: (base: string, head: string) => `${base} bis ${head}`,
 	categories: "Kategorien",
 	categoryToggle: (label: string, on: boolean) =>
 		on ? `${label} ausblenden` : `${label} einblenden`,
+	categoryFiles: (label: string, n: number) => `${label}: ${plural(n, "Datei", "Dateien")}`,
 	search: "Suchen",
 	searchShortcut: (mac: boolean) => (mac ? "⌘K" : "Strg K"),
 	progress: (seen: number, total: number) => `${fmt(seen)} von ${fmt(total)} gesehen`,
@@ -57,6 +60,7 @@ export const S = {
 	themeToggle: (current: string) => `Farbschema: ${current} (wechseln)`,
 	sidebarShow: "Seitenleiste zeigen",
 	sidebarHide: "Seitenleiste ausblenden",
+	skipFiles: "Dateiliste überspringen",
 
 	// Sidebar
 	tabChapters: "Kapitel",
@@ -96,6 +100,9 @@ export const S = {
 	searchEmpty: "Keine sichtbare Datei passt.",
 	searchHint: "Enter öffnet, ↑ ↓ wählt, Esc schließt",
 	searchLabel: "Dateien durchsuchen",
+	/** The same hint as `searchHint`, one word per key (the keys are drawn next to them). */
+	searchKeys: { open: "öffnet", move: "wählt", close: "schließt" },
+	keyEsc: "Esc",
 
 	// Map
 	mapTitle: "Karte",
