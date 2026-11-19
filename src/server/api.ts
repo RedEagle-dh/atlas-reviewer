@@ -2,6 +2,13 @@
  * The `/api` handlers: thin, they parse the request, ask the session and shape the answer.
  */
 import { UnknownRangeError } from "../core/build";
+import {
+	InvalidCommentError,
+	MAX_COMMENT_SNIPPET,
+	MAX_COMMENT_TEXT,
+	readCommentDraft,
+	readCommentEdit,
+} from "../core/comments";
 import { RangeMovedError, type ReviewSession } from "../core/session";
 import { GitError } from "../core/source";
 import type { ApiErrorBody, ViewedUpdate } from "../core/types";
@@ -17,11 +24,16 @@ function failure(status: number, error: ApiErrorBody["error"], message: string):
 	return json(body, status);
 }
 
+/** A request the handler cannot read; the message says why. */
+class BadRequestError extends Error {}
+
 /** Maps errors to the contract's error body; unknown errors are 500s with their message. */
 async function guarded(handler: () => Promise<Response>): Promise<Response> {
 	try {
 		return await handler();
 	} catch (error) {
+		if (error instanceof BadRequestError || error instanceof InvalidCommentError)
+			return failure(400, "bad-request", error.message);
 		if (error instanceof UnknownRangeError) return failure(404, "unknown-range", error.message);
 		if (error instanceof RangeMovedError) return failure(409, "range-moved", error.message);
 		const message =
@@ -48,7 +60,29 @@ function isViewedUpdate(value: unknown): value is ViewedUpdate {
 
 const SHA = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 
-const MAX_BODY = 64 * 1024;
+/**
+ * The largest request body in bytes (also the server's `maxRequestBodySize`), made from what it
+ * has to hold: a comment draft at its limits. JSON spends at most six bytes on one character
+ * (`\u001f`); the 16 KiB on top are room for the path, the numbers and the field names.
+ */
+export const MAX_BODY = 6 * (MAX_COMMENT_TEXT + MAX_COMMENT_SNIPPET) + 16 * 1024;
+
+/**
+ * The body as JSON. Bun turns a larger body away before a handler runs (413, without a body);
+ * the check here holds for whoever calls a handler another way.
+ */
+async function jsonBody(req: Request): Promise<unknown> {
+	const text = await req.text();
+	if (text.length > MAX_BODY) throw new BadRequestError("body too large");
+	try {
+		return JSON.parse(text);
+	} catch {
+		throw new BadRequestError("body must be JSON");
+	}
+}
+
+/** A request of the route `/api/comments/:id`: Bun reads the id out of the path. */
+export type CommentRequest = Request & { params: { id: string } };
 
 export function createApi(session: ReviewSession) {
 	return {
@@ -83,14 +117,7 @@ export function createApi(session: ReviewSession) {
 		/** PUT /api/state { path, viewed, range?, blob? } */
 		putState: (req: Request) =>
 			guarded(async () => {
-				const text = await req.text();
-				if (text.length > MAX_BODY) return failure(400, "bad-request", "body too large");
-				let body: unknown;
-				try {
-					body = JSON.parse(text);
-				} catch {
-					return failure(400, "bad-request", "body must be JSON");
-				}
+				const body = await jsonBody(req);
 				if (!isViewedUpdate(body))
 					return failure(
 						400,
@@ -101,6 +128,34 @@ export function createApi(session: ReviewSession) {
 				if (!state) return failure(404, "not-found", `${body.path} is not a file of this range`);
 				return json(state);
 			}),
+
+		/** GET /api/comments */
+		getComments: () => guarded(async () => json(await session.comments())),
+
+		/** POST /api/comments { path, line?, endLine?, snippet?, text, range? } */
+		addComment: (req: Request) =>
+			guarded(async () => {
+				const draft = readCommentDraft(await jsonBody(req));
+				const state = await session.addComment(draft);
+				if (!state) return failure(404, "not-found", `${draft.path} is not a file of this range`);
+				return json(state);
+			}),
+
+		/** PUT /api/comments/:id { text } */
+		editComment: (req: CommentRequest) =>
+			guarded(async () => {
+				const { id } = req.params;
+				const state = await session.editComment(id, readCommentEdit(await jsonBody(req)));
+				if (!state) return failure(404, "not-found", `there is no comment with the id "${id}"`);
+				return json(state);
+			}),
+
+		/** DELETE /api/comments/:id */
+		removeComment: (req: CommentRequest) =>
+			guarded(async () => json(await session.removeComment(req.params.id))),
+
+		/** DELETE /api/comments */
+		clearComments: () => guarded(async () => json(await session.clearComments())),
 
 		/** Anything else under /api (also a known path with another method). */
 		notFound: (req: Request) =>

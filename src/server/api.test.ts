@@ -1,0 +1,610 @@
+/**
+ * Review comments end to end on a real repository: a temporary git repository with a modified, a
+ * deleted, a renamed and an unchanged file, asked through the session, through the handlers (with
+ * plain `Request` objects) and through the running server (routes, methods, body size). Git runs
+ * isolated from the user's configuration (no signing, no hooks).
+ */
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { UnknownRangeError } from "../core/build";
+import { MAX_COMMENT_SNIPPET, MAX_COMMENT_TEXT } from "../core/comments";
+import { type Review, resolveReview } from "../core/define";
+import { type Highlighter, plainLines } from "../core/highlight";
+import { ReviewSession } from "../core/session";
+import type { CommentsState, ReviewComment } from "../core/types";
+import { type CommentRequest, createApi, MAX_BODY } from "./api";
+import { type RunningServer, startServer } from "./main";
+
+const ISOLATED_GIT = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
+let root = "";
+let repo = "";
+
+async function git(...args: string[]): Promise<string> {
+	const proc = Bun.spawn(
+		[
+			"git",
+			"-c",
+			"user.name=atlas",
+			"-c",
+			"user.email=atlas@example.invalid",
+			"-c",
+			"commit.gpgsign=false",
+			...args,
+		],
+		{ cwd: repo, stdout: "pipe", stderr: "pipe", env: ISOLATED_GIT },
+	);
+	const [out, err, code] = await Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+		proc.exited,
+	]);
+	if (code !== 0) throw new Error(`git ${args.join(" ")} failed: ${err}`);
+	return out.trim();
+}
+
+async function write(files: Record<string, string>): Promise<void> {
+	for (const [path, text] of Object.entries(files)) {
+		await mkdir(dirname(join(repo, path)), { recursive: true });
+		await Bun.write(join(repo, path), text);
+	}
+}
+
+const plain: Highlighter = {
+	languageFor: () => null,
+	highlight: async (code) => ({ lines: plainLines(code), palette: [["#000000", "#ffffff"]] }),
+};
+
+let review: Review;
+/** The head of range `r` (and of `tagged`) before the last test of "session" moves `r` on. */
+let firstHead = "";
+
+/** A session with a data directory of its own, so every group of tests starts without comments. */
+const open = (name: string): ReviewSession =>
+	new ReviewSession(review, { dataDir: join(root, name), importCache: null, highlighter: plain });
+const fileOf = (name: string): string => join(root, name, "state", "comments-test.comments.json");
+const onDisk = async (name: string): Promise<unknown> =>
+	JSON.parse(await Bun.file(fileOf(name)).text());
+
+beforeAll(async () => {
+	root = await mkdtemp(join(tmpdir(), "review-atlas-comments-api-"));
+	repo = join(root, "repo");
+	await mkdir(repo);
+	await git("init", "-q", "-b", "main");
+	await write({
+		"src/a.ts": "export const a = 1;\nexport const b = 2;\nexport const c = 3;\n",
+		"src/gone.ts": "export const gone = 1;\nexport const too = 2;\n",
+		"src/old.ts": Array.from({ length: 12 }, (_, i) => `export const old${i} = ${i};`).join("\n"),
+		"src/same.ts": "export const same = 1;\n",
+	});
+	await git("add", "-A");
+	await git("commit", "-q", "-m", "base");
+	await git("tag", "base");
+	await git("rm", "-q", "src/gone.ts");
+	await git("mv", "src/old.ts", "src/new.ts");
+	await write({ "src/a.ts": "export const a = 1;\nexport const b = 20;\nexport const c = 3;\n" });
+	await git("add", "-A");
+	await git("commit", "-q", "-m", "head");
+	await git("tag", "v1");
+	firstHead = await git("rev-parse", "HEAD");
+
+	review = resolveReview({
+		id: "comments-test",
+		title: "Comments test",
+		repo,
+		ranges: [
+			{ id: "r", label: "R", base: "base" },
+			{ id: "tagged", label: "Tagged", base: "base", head: "v1" },
+			{ id: "later", label: "Later", base: "v1" },
+		],
+	});
+});
+
+afterAll(() => rm(root, { recursive: true, force: true }));
+
+describe("session", () => {
+	test("a comment on lines of a head file: recorded in the range, at its head commit", async () => {
+		const session = open("lines");
+		expect(await session.comments()).toEqual({ comments: [] });
+		const state = await session.addComment({
+			path: "src/a.ts",
+			line: 2,
+			endLine: 3,
+			snippet: "export const b = 20;\nexport const c = 3;",
+			text: "  Why 20?\n",
+			range: "r",
+		});
+		const comment = state?.comments[0];
+		expect(state?.comments).toEqual([
+			{
+				id: comment?.id ?? "",
+				path: "src/a.ts",
+				line: 2,
+				endLine: 3,
+				snippet: "export const b = 20;\nexport const c = 3;",
+				text: "Why 20?",
+				range: "r",
+				head: firstHead,
+				createdAt: comment?.createdAt ?? "",
+				updatedAt: comment?.createdAt ?? "",
+			},
+		]);
+		expect(comment?.head).toBe((await session.model("r")).range.head.sha);
+		expect(await session.comments()).toEqual({ comments: state?.comments ?? [] });
+		expect(await onDisk("lines")).toEqual({ comments: state?.comments ?? [] });
+	});
+
+	test("on a whole file, a deleted file, a renamed file, an unchanged file", async () => {
+		const session = open("kinds");
+		await session.addComment({ path: "src/a.ts", text: "whole file" });
+		await session.addComment({ path: "src/gone.ts", line: 2, text: "deleted: a base line" });
+		await session.addComment({ path: "src/new.ts", line: 12, text: "renamed: its new path" });
+		const state = await session.addComment({ path: "src/same.ts", line: 1, text: "unchanged" });
+		expect(state?.comments.map((c) => [c.path, c.line, c.range, c.head])).toEqual([
+			// No range named: the review's first.
+			["src/a.ts", undefined, "r", firstHead],
+			["src/gone.ts", 2, "r", firstHead],
+			["src/new.ts", 12, "r", firstHead],
+			["src/same.ts", 1, "r", firstHead],
+		]);
+	});
+
+	test("a path that is no file of the range: null, and nothing is written", async () => {
+		const session = open("unknown-path");
+		for (const path of [
+			"src/nope.ts",
+			// A renamed file's old path is gone; a directory is no file.
+			"src/old.ts",
+			"src",
+			// Whatever a path looks like, it is only looked up in the commit's file list.
+			"../../etc/passwd",
+			"/etc/passwd",
+			"src/../src/a.ts",
+			join(repo, "src/a.ts"),
+			"__proto__",
+		])
+			expect(await session.addComment({ path, text: "x" })).toBeNull();
+		// A deleted file is a file only of a range that deletes it.
+		expect(await session.addComment({ path: "src/gone.ts", text: "x", range: "later" })).toBeNull();
+		expect(await session.comments()).toEqual({ comments: [] });
+		expect(await Bun.file(fileOf("unknown-path")).exists()).toBe(false);
+	});
+
+	test("an unknown range is an error, not a comment in another range", async () => {
+		const session = open("unknown-range");
+		await expect(
+			session.addComment({ path: "src/a.ts", text: "x", range: "nope" }),
+		).rejects.toBeInstanceOf(UnknownRangeError);
+		expect(await session.comments()).toEqual({ comments: [] });
+	});
+
+	test("edit, remove and clear", async () => {
+		const session = open("edit");
+		await session.addComment({ path: "src/a.ts", line: 1, text: "one" });
+		const added = await session.addComment({ path: "src/a.ts", line: 2, text: "two" });
+		const [one, two] = added?.comments ?? [];
+		if (!one || !two) throw new Error("no comments");
+		await Bun.sleep(5);
+		const edited = await session.editComment(two.id, { text: " two, better " });
+		expect(edited?.comments[0]).toEqual(one);
+		expect(edited?.comments[1]).toMatchObject({ id: two.id, text: "two, better", line: 2 });
+		expect(edited?.comments[1]?.createdAt).toBe(two.createdAt);
+		expect(edited?.comments[1]?.updatedAt).not.toBe(two.updatedAt);
+		expect(await session.editComment("unknown", { text: "x" })).toBeNull();
+		expect((await session.removeComment(one.id)).comments.map((c) => c.id)).toEqual([two.id]);
+		expect((await session.removeComment(one.id)).comments.map((c) => c.id)).toEqual([two.id]);
+		expect(await onDisk("edit")).toEqual(await session.comments());
+		expect(await session.clearComments()).toEqual({ comments: [] });
+		expect(await onDisk("edit")).toEqual({ comments: [] });
+	});
+
+	test("another session on the same data (a restart) has the comments again", async () => {
+		const first = open("restart");
+		await first.addComment({
+			path: "src/a.ts",
+			line: 1,
+			snippet: "export const a = 1;",
+			text: "a",
+		});
+		const written = await first.addComment({ path: "src/gone.ts", text: "b" });
+		expect(await open("restart").comments()).toEqual({ comments: written?.comments ?? [] });
+	});
+
+	test("a range that has moved on records its new head; the comments before keep theirs", async () => {
+		const session = open("moved");
+		await session.addComment({ path: "src/a.ts", line: 2, text: "before", range: "r" });
+		await write({ "src/a.ts": "export const a = 1;\nexport const b = 21;\nexport const c = 3;\n" });
+		await git("commit", "-q", "-am", "moved");
+		const moved = await git("rev-parse", "HEAD");
+		expect(moved).not.toBe(firstHead);
+		await session.addComment({ path: "src/a.ts", line: 2, text: "after", range: "r" });
+		// The other range ends at a tag, which stayed where it was.
+		const state = await session.addComment({
+			path: "src/a.ts",
+			line: 2,
+			text: "tag",
+			range: "tagged",
+		});
+		expect(state?.comments.map((c) => [c.text, c.range, c.head])).toEqual([
+			["before", "r", firstHead],
+			["after", "r", moved],
+			["tag", "tagged", firstHead],
+		]);
+	});
+});
+
+interface Answer {
+	status: number;
+	type: string | null;
+	cache: string | null;
+	body: unknown;
+}
+
+async function answerOf(response: Response | Promise<Response>): Promise<Answer> {
+	const r = await response;
+	const text = await r.text();
+	return {
+		status: r.status,
+		type: r.headers.get("content-type"),
+		cache: r.headers.get("cache-control"),
+		body: text === "" ? null : JSON.parse(text),
+	};
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+	typeof value === "object" && value !== null;
+
+const isCommentsState = (value: unknown): value is CommentsState =>
+	isRecord(value) && Array.isArray(value.comments);
+
+/** The comments of a 200 answer; any other answer fails the test here. */
+const commentsOf = (answer: Answer): ReviewComment[] => {
+	if (answer.status === 200 && isCommentsState(answer.body)) return answer.body.comments;
+	throw new Error(`not a list of comments: ${answer.status} ${JSON.stringify(answer.body)}`);
+};
+
+/** Status, `error` and `message` of an answer with the contract's error body. */
+const errorOf = (answer: Answer): [number, unknown, unknown] => {
+	const body = isRecord(answer.body) ? answer.body : {};
+	return [answer.status, body.error, body.message];
+};
+
+describe("handlers", () => {
+	const ENDPOINT = "http://atlas.test/api/comments";
+	const post = (body: unknown): Request =>
+		new Request(ENDPOINT, {
+			method: "POST",
+			body: typeof body === "string" ? body : JSON.stringify(body),
+		});
+	const withId = (id: string, method: "PUT" | "DELETE", body?: unknown): CommentRequest =>
+		Object.assign(
+			new Request(`${ENDPOINT}/${encodeURIComponent(id)}`, {
+				method,
+				...(body === undefined
+					? {}
+					: { body: typeof body === "string" ? body : JSON.stringify(body) }),
+			}),
+			{ params: { id } },
+		);
+
+	test("GET, POST, PUT, DELETE one, DELETE all: each answers with the whole list, uncached", async () => {
+		const session = open("handlers");
+		const api = createApi(session);
+		const head = (await session.model()).range.head.sha;
+
+		const empty = await answerOf(api.getComments());
+		expect(empty).toEqual({
+			status: 200,
+			type: "application/json;charset=utf-8",
+			cache: "no-store",
+			body: { comments: [] },
+		});
+
+		const first = await answerOf(
+			api.addComment(
+				post({
+					path: "src/a.ts",
+					line: 2,
+					endLine: 2,
+					snippet: "export const b = 21;",
+					text: "\n Why?  ",
+					id: "mine",
+					head: "f00",
+					createdAt: "then",
+				}),
+			),
+		);
+		expect(first.cache).toBe("no-store");
+		const [one] = commentsOf(first);
+		expect(one).toEqual({
+			id: one?.id ?? "",
+			path: "src/a.ts",
+			line: 2,
+			snippet: "export const b = 21;",
+			text: "Why?",
+			range: "r",
+			head,
+			createdAt: one?.createdAt ?? "",
+			updatedAt: one?.createdAt ?? "",
+		});
+		expect(one?.id).toMatch(/^[0-9a-f-]{36}$/);
+
+		const second = commentsOf(
+			await answerOf(
+				api.addComment(post({ path: "src/gone.ts", text: "Why gone?", range: "tagged" })),
+			),
+		);
+		expect(second.map((c) => [c.path, c.range, c.head])).toEqual([
+			["src/a.ts", "r", head],
+			["src/gone.ts", "tagged", firstHead],
+		]);
+		expect(commentsOf(await answerOf(api.getComments()))).toEqual(second);
+		expect(await onDisk("handlers")).toEqual({ comments: second });
+
+		const edited = commentsOf(
+			await answerOf(api.editComment(withId(one?.id ?? "", "PUT", { text: " Why 21? " }))),
+		);
+		expect(edited.map((c) => c.text)).toEqual(["Why 21?", "Why gone?"]);
+		expect(await onDisk("handlers")).toEqual({ comments: edited });
+
+		const removed = commentsOf(await answerOf(api.removeComment(withId(one?.id ?? "", "DELETE"))));
+		expect(removed.map((c) => c.text)).toEqual(["Why gone?"]);
+		// Gone either way: the same request again is no error.
+		expect(commentsOf(await answerOf(api.removeComment(withId(one?.id ?? "", "DELETE"))))).toEqual(
+			removed,
+		);
+		expect(commentsOf(await answerOf(api.removeComment(withId("no-such-id", "DELETE"))))).toEqual(
+			removed,
+		);
+
+		expect(await answerOf(api.clearComments())).toMatchObject({
+			status: 200,
+			body: { comments: [] },
+		});
+		expect(await onDisk("handlers")).toEqual({ comments: [] });
+	});
+
+	test("a malformed body is a 400 that names the field; nothing is written", async () => {
+		const session = open("handlers-400");
+		const api = createApi(session);
+		const ok = { path: "src/a.ts", text: "x" };
+		const refused = async (body: unknown) => errorOf(await answerOf(api.addComment(post(body))));
+		expect(await refused("{ not json")).toEqual([400, "bad-request", "body must be JSON"]);
+		expect(await refused("")).toEqual([400, "bad-request", "body must be JSON"]);
+		expect(await refused("null")).toEqual([400, "bad-request", "a comment must be a JSON object"]);
+		expect(await refused([ok])).toEqual([400, "bad-request", "a comment must be a JSON object"]);
+		expect(await refused({ text: "x" })).toEqual([
+			400,
+			"bad-request",
+			"`path` must be a non-empty string",
+		]);
+		expect(await refused({ ...ok, line: 0 })).toEqual([
+			400,
+			"bad-request",
+			"`line` must be a positive integer",
+		]);
+		expect(await refused({ ...ok, line: "2" })).toEqual([
+			400,
+			"bad-request",
+			"`line` must be a positive integer",
+		]);
+		expect(await refused({ ...ok, line: 2, endLine: 1.5 })).toEqual([
+			400,
+			"bad-request",
+			"`endLine` must be a positive integer",
+		]);
+		expect(await refused({ ...ok, endLine: 3 })).toEqual([
+			400,
+			"bad-request",
+			"`endLine` needs `line`",
+		]);
+		expect(await refused({ ...ok, line: 3, endLine: 2 })).toEqual([
+			400,
+			"bad-request",
+			"`endLine` must not be before `line`",
+		]);
+		expect(await refused({ path: "src/a.ts" })).toEqual([
+			400,
+			"bad-request",
+			"`text` must be a string",
+		]);
+		expect(await refused({ ...ok, text: " \n " })).toEqual([
+			400,
+			"bad-request",
+			"`text` must not be empty",
+		]);
+		expect(await refused({ ...ok, text: "x".repeat(MAX_COMMENT_TEXT + 1) })).toEqual([
+			400,
+			"bad-request",
+			"`text` must be at most 10000 characters",
+		]);
+		expect(await refused({ ...ok, line: 1, snippet: ["x"] })).toEqual([
+			400,
+			"bad-request",
+			"`snippet` must be a string",
+		]);
+		expect(await refused({ ...ok, line: 1, snippet: "x".repeat(MAX_COMMENT_SNIPPET + 1) })).toEqual(
+			[400, "bad-request", "`snippet` must be at most 8000 characters"],
+		);
+		expect(await refused({ ...ok, range: 1 })).toEqual([
+			400,
+			"bad-request",
+			"`range` must be a string",
+		]);
+		// A malformed body is refused before the range or the path is looked at.
+		expect(await refused({ path: "nope.ts", text: "", range: "nope" })).toEqual([
+			400,
+			"bad-request",
+			"`text` must not be empty",
+		]);
+		expect(await refused("x".repeat(MAX_BODY + 1))).toEqual([400, "bad-request", "body too large"]);
+		expect(await session.comments()).toEqual({ comments: [] });
+		expect(await Bun.file(fileOf("handlers-400")).exists()).toBe(false);
+	});
+
+	test("an unknown path or id is a 404 `not-found`, an unknown range a 404 `unknown-range`", async () => {
+		const session = open("handlers-404");
+		const api = createApi(session);
+		for (const path of ["src/nope.ts", "src/old.ts", "../../etc/passwd", "/etc/passwd"])
+			expect(errorOf(await answerOf(api.addComment(post({ path, text: "x" }))))).toEqual([
+				404,
+				"not-found",
+				`${path} is not a file of this range`,
+			]);
+		const unknownRange = await answerOf(
+			api.addComment(post({ path: "src/a.ts", text: "x", range: "nope" })),
+		);
+		expect(errorOf(unknownRange).slice(0, 2)).toEqual([404, "unknown-range"]);
+		expect(unknownRange.cache).toBe("no-store");
+
+		const edit = (id: string, body: unknown) =>
+			answerOf(api.editComment(withId(id, "PUT", body))).then(errorOf);
+		expect(await edit("no-such-id", { text: "x" })).toEqual([
+			404,
+			"not-found",
+			'there is no comment with the id "no-such-id"',
+		]);
+		expect((await edit("../../etc/passwd", { text: "x" })).slice(0, 2)).toEqual([404, "not-found"]);
+		// The body is checked first: a bad edit of an unknown comment is a bad request.
+		expect(await edit("no-such-id", { text: "  " })).toEqual([
+			400,
+			"bad-request",
+			"`text` must not be empty",
+		]);
+		expect(await edit("no-such-id", "{")).toEqual([400, "bad-request", "body must be JSON"]);
+		expect(await edit("no-such-id", { text: "x".repeat(MAX_COMMENT_TEXT + 1) })).toEqual([
+			400,
+			"bad-request",
+			"`text` must be at most 10000 characters",
+		]);
+		expect(await session.comments()).toEqual({ comments: [] });
+	});
+});
+
+describe("the running server", () => {
+	let running: RunningServer;
+	const at = (path: string): string => `${running.url.replace(/\/$/, "")}${path}`;
+	const send = (method: string, path: string, body?: unknown): Promise<Answer> =>
+		answerOf(
+			fetch(at(path), {
+				method,
+				...(body === undefined
+					? {}
+					: {
+							headers: { "content-type": "application/json" },
+							body: typeof body === "string" ? body : JSON.stringify(body),
+						}),
+			}),
+		);
+
+	beforeAll(() => {
+		running = startServer(review, { session: open("server"), port: 0 });
+	});
+	afterAll(() => running.stop());
+
+	test("the routes reach their handlers, the id comes out of the path", async () => {
+		expect(commentsOf(await send("GET", "/api/comments"))).toEqual([]);
+		const [one] = commentsOf(
+			await send("POST", "/api/comments", { path: "src/a.ts", line: 1, text: "first" }),
+		);
+		const id = one?.id ?? "";
+		commentsOf(await send("POST", "/api/comments", { path: "src/gone.ts", text: "second" }));
+		expect(
+			commentsOf(await send("PUT", `/api/comments/${id}`, { text: "first, edited" })).map(
+				(c) => c.text,
+			),
+		).toEqual(["first, edited", "second"]);
+		expect(errorOf(await send("PUT", "/api/comments/no-such-id", { text: "x" }))).toEqual([
+			404,
+			"not-found",
+			'there is no comment with the id "no-such-id"',
+		]);
+		// An id is a name in a list, never a path: an encoded `../` finds nothing and touches nothing.
+		expect(
+			errorOf(await send("PUT", "/api/comments/..%2F..%2Fetc%2Fpasswd", { text: "x" })),
+		).toEqual([404, "not-found", 'there is no comment with the id "../../etc/passwd"']);
+		expect(commentsOf(await send("DELETE", "/api/comments/..%2F..%2Fetc%2Fpasswd"))).toHaveLength(
+			2,
+		);
+		expect(commentsOf(await send("DELETE", `/api/comments/${id}`)).map((c) => c.text)).toEqual([
+			"second",
+		]);
+		expect(commentsOf(await send("DELETE", "/api/comments"))).toEqual([]);
+		expect(commentsOf(await send("GET", "/api/comments"))).toEqual([]);
+	});
+
+	test("a known path with another method is a 404 `not-found` as JSON, like any unknown endpoint", async () => {
+		for (const [method, path] of [
+			["PUT", "/api/comments"],
+			["PATCH", "/api/comments"],
+			["GET", "/api/comments/some-id"],
+			["POST", "/api/comments/some-id"],
+			["PATCH", "/api/comments/some-id"],
+			["DELETE", "/api/comments/"],
+			["PUT", "/api/comments/a/b"],
+			["GET", "/api/comment"],
+		] as const) {
+			const answer = await send(method, path, method === "GET" ? undefined : { text: "x" });
+			expect([method, path, ...errorOf(answer)]).toEqual([
+				method,
+				path,
+				404,
+				"not-found",
+				`no such endpoint: ${method} ${path}`,
+			]);
+			expect(answer.type).toBe("application/json;charset=utf-8");
+		}
+		expect(commentsOf(await send("GET", "/api/comments"))).toEqual([]);
+	});
+
+	test("the errors arrive as the contract's error body", async () => {
+		expect(errorOf(await send("POST", "/api/comments", "{ not json"))).toEqual([
+			400,
+			"bad-request",
+			"body must be JSON",
+		]);
+		expect(errorOf(await send("POST", "/api/comments", { path: "src/a.ts", text: "" }))).toEqual([
+			400,
+			"bad-request",
+			"`text` must not be empty",
+		]);
+		expect(
+			errorOf(await send("POST", "/api/comments", { path: "../../etc/passwd", text: "x" })),
+		).toEqual([404, "not-found", "../../etc/passwd is not a file of this range"]);
+		expect(
+			errorOf(
+				await send("POST", "/api/comments", { path: "src/a.ts", text: "x", range: "nope" }),
+			).slice(0, 2),
+		).toEqual([404, "unknown-range"]);
+	});
+
+	test("the body limit holds a comment at its limits, whatever its characters", async () => {
+		// JSON writes a control character as six bytes (`\u0001`): the largest a draft can get.
+		const draft = {
+			path: "src/a.ts",
+			line: 1,
+			endLine: 3,
+			snippet: "\u0001".repeat(MAX_COMMENT_SNIPPET),
+			text: "\u0001".repeat(MAX_COMMENT_TEXT),
+			range: "tagged",
+		};
+		const body = JSON.stringify(draft);
+		expect(body.length).toBeGreaterThan(6 * (MAX_COMMENT_SNIPPET + MAX_COMMENT_TEXT));
+		expect(body.length).toBeLessThan(MAX_BODY);
+		const [comment] = commentsOf(await send("POST", "/api/comments", body));
+		expect(comment?.text).toHaveLength(MAX_COMMENT_TEXT);
+		expect(comment?.snippet).toHaveLength(MAX_COMMENT_SNIPPET);
+		// Three bytes a character in UTF-8, the most a character takes when it is not escaped.
+		commentsOf(
+			await send("POST", "/api/comments", { ...draft, text: "言".repeat(MAX_COMMENT_TEXT) }),
+		);
+		expect(commentsOf(await send("DELETE", "/api/comments"))).toEqual([]);
+	});
+
+	test("a larger body is turned away by the server itself", async () => {
+		const answer = await send("POST", "/api/comments", "x".repeat(MAX_BODY + 1));
+		expect(answer.status).toBe(413);
+		expect(commentsOf(await send("GET", "/api/comments"))).toEqual([]);
+	});
+});

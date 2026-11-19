@@ -1,9 +1,12 @@
 /**
- * The typed client for the four endpoints: the browser half of the contract in
- * `src/core/types.ts` (imported as types only, so nothing of the server reaches the bundle).
+ * The typed client for the endpoints: the browser half of the contract in `src/core/types.ts`
+ * (imported as types only, so nothing of the server reaches the bundle).
  */
 import type {
 	ApiErrorBody,
+	CommentDraft,
+	CommentEdit,
+	CommentsState,
 	FileView,
 	ReviewMeta,
 	ReviewModel,
@@ -46,6 +49,21 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 	}
 	// The server answers with the contract's types (src/core/types.ts); the body is trusted as T.
 	return body as T;
+}
+
+/** A request with a JSON body. */
+function send<T>(
+	method: "POST" | "PUT",
+	url: string,
+	body: unknown,
+	options: RequestOptions,
+): Promise<T> {
+	return request(url, {
+		...options,
+		method,
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(body),
+	});
 }
 
 function query(params: Record<string, string | undefined>): string {
@@ -97,10 +115,41 @@ export function setViewed(
 	update: ViewedUpdate,
 	options: RequestOptions = {},
 ): Promise<ViewedState> {
-	return request("/api/state", {
-		...options,
-		method: "PUT",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify(update),
-	});
+	return send("PUT", "/api/state", update, options);
+}
+
+/** GET /api/comments — the review's comments, in the order they were written */
+export function getComments(options: RequestOptions = {}): Promise<CommentsState> {
+	return request("/api/comments", options);
+}
+
+/**
+ * POST /api/comments — a comment on lines of a file or on the file as a whole, recorded at the
+ * range's head commit; the new comment is the last entry of the answer. 404 `not-found` when the
+ * path is no file of the range.
+ */
+export function addComment(
+	draft: CommentDraft,
+	options: RequestOptions = {},
+): Promise<CommentsState> {
+	return send("POST", "/api/comments", draft, options);
+}
+
+/** PUT /api/comments/:id — another text for a comment; 404 `not-found` for an unknown id */
+export function editComment(
+	id: string,
+	edit: CommentEdit,
+	options: RequestOptions = {},
+): Promise<CommentsState> {
+	return send("PUT", `/api/comments/${encodeURIComponent(id)}`, edit, options);
+}
+
+/** DELETE /api/comments/:id — an unknown id is no error: the comment is gone either way */
+export function removeComment(id: string, options: RequestOptions = {}): Promise<CommentsState> {
+	return request(`/api/comments/${encodeURIComponent(id)}`, { ...options, method: "DELETE" });
+}
+
+/** DELETE /api/comments — all of them: the reader starts over after handing them to the agent */
+export function clearComments(options: RequestOptions = {}): Promise<CommentsState> {
+	return request("/api/comments", { ...options, method: "DELETE" });
 }

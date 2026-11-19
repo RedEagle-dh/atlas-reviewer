@@ -2,7 +2,7 @@
  * The file page's data: any file of the head commit (or a deleted file of the base commit),
  * highlighted, with its change blocks, its imports and who imports it.
  */
-import { type RangeBuild, targetOf } from "./build";
+import { type RangeBuild, sourceOf, targetOf } from "./build";
 import { mergeStatements } from "./graph";
 import type { Highlighted, Highlighter } from "./highlight";
 import type { ResolvedImport } from "./imports/analyze";
@@ -129,10 +129,9 @@ export async function buildFileView(
 	path: string,
 	context: FileViewContext,
 ): Promise<FileView | null> {
+	const source = sourceOf(build, path);
+	if (!source) return null;
 	const entry = build.diff.get(path);
-	const deleted = entry?.status === "deleted";
-	if (deleted ? !build.base.has(path) : !build.head.has(path)) return null;
-	const source = deleted ? build.base : build.head;
 
 	const content = await readContent(source, path, context);
 	let { palette } = content.highlighted;

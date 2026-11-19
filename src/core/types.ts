@@ -1,7 +1,8 @@
 /**
- * THE contract between core, server and UI. Everything the UI shows comes through the four
- * answers below (`ReviewMeta`, `ReviewModel`, `FileView`, `ViewedState`). The UI imports this
- * file with `import type` only, so nothing of git or the filesystem reaches the browser bundle.
+ * THE contract between core, server and UI. Everything the UI shows comes through the five
+ * answers below (`ReviewMeta`, `ReviewModel`, `FileView`, `ViewedState`, `CommentsState`). The UI
+ * imports this file with `import type` only, so nothing of git or the filesystem reaches the
+ * browser bundle.
  *
  * The review configuration types (what a `*.review.ts` file contains) live here too, so there
  * is exactly one place that names the shapes of this tool.
@@ -287,10 +288,91 @@ export interface ViewedUpdate {
 }
 
 // ---------------------------------------------------------------------------------------------
+// GET /api/comments → CommentsState; POST /api/comments CommentDraft → CommentsState;
+// PUT /api/comments/:id CommentEdit → CommentsState; DELETE /api/comments/:id → CommentsState;
+// DELETE /api/comments → CommentsState (empty)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * A review comment: on lines of a file, or on the file as a whole. Per review, like the viewed
+ * marks. The reader collects them and hands them to a coding agent as one prompt.
+ */
+export interface ReviewComment {
+	/** Made by the server. */
+	id: string;
+	/** Repo path (the head path; the base path of a deleted file). */
+	path: string;
+	/**
+	 * First commented line, 1-based, as the file page numbers them (head lines; base lines of a
+	 * deleted file). Absent: a comment on the whole file.
+	 */
+	line?: number;
+	/** Last commented line (inclusive) when more than one; absent: just `line`. */
+	endLine?: number;
+	/**
+	 * The commented lines as text when the comment was written (at most the first SNIPPET_LINES
+	 * of them, see `src/ui/lib/comments.ts`): what a prompt quotes, and how the place is found
+	 * again after the code moved. Only with `line`.
+	 */
+	snippet?: string;
+	/** Trimmed, never empty. */
+	text: string;
+	/**
+	 * The range the comment was written in, and that range's head commit then: the commit its
+	 * line numbers belong to.
+	 */
+	range: string;
+	head: string;
+	/** ISO timestamps; `updatedAt` moves when the text is edited. */
+	createdAt: string;
+	updatedAt: string;
+}
+
+/** In the order they were written. */
+export interface CommentsState {
+	comments: ReviewComment[];
+}
+
+/**
+ * Body of `POST /api/comments`. The server makes `id`, `head` (the range's head at that moment)
+ * and the timestamps and trims `text`; the new comment is the LAST entry of the answer. 400
+ * `bad-request` when a field breaks a rule (the message names it): `path` a non-empty string,
+ * `line` and `endLine` positive integers, `endLine` only with `line` and not before it, `text`
+ * not empty and at most 10 000 characters, `snippet` at most 8 000 (the limits are constants of
+ * `src/core/comments.ts`). 404 `not-found` when `path` is no file of the range's head commit and
+ * no deleted file of its base (never a read from disk); 404 `unknown-range`. Unknown fields are
+ * ignored.
+ */
+export interface CommentDraft {
+	path: string;
+	line?: number;
+	/** Stored only when it is after `line`. */
+	endLine?: number;
+	/** Stored only with `line`. */
+	snippet?: string;
+	text: string;
+	/** Default: the first range. */
+	range?: string;
+}
+
+/**
+ * Body of `PUT /api/comments/:id`: the new text, under the rules of `CommentDraft.text`. 404
+ * `not-found` for an unknown id. (`DELETE` of an unknown id is no error: the comment is gone
+ * either way.)
+ */
+export interface CommentEdit {
+	text: string;
+}
+
+// ---------------------------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------------------------
 
-/** Body of every non-2xx answer of `/api/*`. `range-moved` (409): the branch has new commits. */
+/**
+ * Body of every non-2xx answer of `/api/*`. `range-moved` (409): the branch has new commits.
+ * The one answer without it: a request body above the server's size limit (far above a comment
+ * at its limits) is turned away by Bun itself, 413 with no body.
+ */
 export interface ApiErrorBody {
 	error: "bad-request" | "unknown-range" | "not-found" | "range-moved" | "internal";
 	message: string;
