@@ -103,14 +103,12 @@ export function Composer({
 	}, [composer, memory, at]);
 	const elsewhere = line !== undefined && memory.at !== undefined && memory.at !== at;
 	const hint = composer.lost ? S.composerLinesGone : elsewhere ? S.composerElsewhere : null;
-	// Why the last save failed comes first. Lines that are gone are said even then: the page built
-	// anew after a refused save may be the one without them, and what the reader sends next is a
-	// comment on the whole file.
-	const problem =
-		memory.problem !== null && composer.lost
-			? // What the server said may end without a full stop.
-				`${memory.problem.replace(/([^.!?])$/, "$1.")} ${S.composerLinesGone}`
-			: (memory.problem ?? hint);
+	// Why a save failed, as the editor says it. Lines that are gone are said with it, every time:
+	// the page built anew after a refused save may be the one without them, and what the reader
+	// sends next is a comment on the whole file. (What the server said may end without a full stop.)
+	const said = (failed: string): string =>
+		composer.lost ? `${failed.replace(/([^.!?])$/, "$1.")} ${S.composerLinesGone}` : failed;
+	const problem = memory.problem !== null ? said(memory.problem) : hint;
 	// Once: a draft that waits on a file the reader comes back to must not take the focus (and
 	// the scroll position) every time. The editor has read the wish by the time this runs.
 	const refocus = memory.refocus === true;
@@ -130,7 +128,7 @@ export function Composer({
 			// the reader, who was typing here, is put back into the field on it.
 			memory.problem = why?.moved ? S.commentMoved : S.commentNotSaved(S.whyFailed(why));
 			memory.refocus = why?.moved === true;
-			return memory.problem;
+			return said(memory.problem);
 		}
 		composers.close(path);
 		// The new card takes the focus: a screen reader reads it, Tab goes on to its actions.

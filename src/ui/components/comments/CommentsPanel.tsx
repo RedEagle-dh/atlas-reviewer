@@ -149,6 +149,12 @@ export function CommentsPanel() {
 	const clearButton = useRef<HTMLButtonElement>(null);
 	const promptBox = useRef<HTMLPreElement>(null);
 	const count = comments.length;
+	// Nothing is left to delete (another tab cleared the list while the question stood): the
+	// question goes, instead of standing there with a number that is no longer true.
+	useEffect(() => {
+		if (count === 0 && !working)
+			setClearing((asked) => (asked.open ? { ...asked, open: false } : asked));
+	}, [count, working]);
 
 	// What a screen reader is told when the number changes: in words, and not when the page loads.
 	const [announced, setAnnounced] = useState("");
@@ -546,7 +552,8 @@ export function CommentsPanel() {
 								ref={clearButton}
 								variant="ghost"
 								className={`text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20 ${WAITING}`}
-								disabled={refreshing}
+								// Not on a list that may be behind: the server deletes what IT has.
+								disabled={refreshing || stale}
 								focusableWhenDisabled
 								onClick={() => setClearing({ open: true, count })}
 							>
@@ -595,7 +602,7 @@ export function CommentsPanel() {
 							<AlertDialogCancel disabled={working}>{S.cancel}</AlertDialogCancel>
 							<AlertDialogAction
 								variant="destructive"
-								disabled={working || refreshing}
+								disabled={working || refreshing || stale}
 								focusableWhenDisabled
 								className={WAITING}
 								onClick={clearAll}

@@ -188,8 +188,10 @@ export function createCommentStore(file: string): CommentStore {
 	/**
 	 * The file is the list: nothing of it is kept in memory. Every request reads it first, so a
 	 * second server of the same review (started on another port while the first still runs) sees
-	 * what this one wrote, instead of writing its own older list over it. Requests run one after
-	 * the other: two quick ones cannot lose each other's comment.
+	 * what this one wrote, instead of writing its own older list over it. Requests of THIS server
+	 * run one after the other: two quick ones cannot lose each other's comment. Nothing locks the
+	 * file between two servers: writes of both at the very same moment (each reads, then replaces
+	 * the file) can lose one of the two.
 	 */
 	let queue: Promise<unknown> = Promise.resolve();
 	const inTurn = <T>(task: () => Promise<T>): Promise<T> => {

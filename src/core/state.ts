@@ -16,8 +16,9 @@ export function createStateStore(file: string): StateStore {
 	/**
 	 * The file holds the marks: nothing of them is kept in memory. Every request reads it first,
 	 * so a second server of the same review (on another port) sees what this one wrote instead of
-	 * writing its older marks over it. Requests run one after the other: two quick toggles cannot
-	 * interleave, and a read never brings back what a write has just replaced.
+	 * writing its older marks over it. Requests of this server run one after the other: two quick
+	 * toggles cannot interleave, and a read never brings back what a write has just replaced.
+	 * (Between two servers nothing locks the file: see `createCommentStore`.)
 	 */
 	let queue: Promise<unknown> = Promise.resolve();
 	const inTurn = <T>(task: () => Promise<T>): Promise<T> => {
